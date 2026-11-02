@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
+import type { AvatarPoseId, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
 import { MaterialManager, SAREE_CATALOG } from './engine/MaterialManager';
 import { PoseTracker } from './vision/PoseTracker';
 import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
@@ -30,6 +30,10 @@ export function App() {
   const [isSimulated, setIsSimulated] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
 
+  // Pose Stills & Camera Freeze Mode
+  const [poseId, setPoseId] = useState<AvatarPoseId>('front');
+  const [isCameraFrozen, setIsCameraFrozen] = useState<boolean>(false);
+
   // Idle timer (60 seconds)
   const [idleTimeRemaining, setIdleTimeRemaining] = useState<number>(60);
   const [isIdle, setIsIdle] = useState<boolean>(false);
@@ -41,6 +45,9 @@ export function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const poseTrackerRef = useRef<PoseTracker | null>(null);
   const sareeCanvasRef = useRef<SareeCanvasHandle | null>(null);
+
+  // Throttle face projection to every 300ms to preserve 60fps WebGL rendering
+  const lastFaceProjectionTime = useRef<number>(0);
 
   // Reset idle timer on any touch or interaction
   const recordActivity = useCallback(() => {
@@ -59,12 +66,25 @@ export function App() {
     tracker.onPoseUpdate = ({ landmarks: lms, liveScales }) => {
       setLandmarks(lms);
       setScales(liveScales);
+
+      // Dynamically project customer's face onto 3D model head if not frozen
+      const now = performance.now();
+      if (!tracker.isPaused && now - lastFaceProjectionTime.current > 250) {
+        lastFaceProjectionTime.current = now;
+        if (video.readyState >= 2 && lms.length > 0) {
+          sareeCanvasRef.current?.projectFace(video, lms);
+        }
+      }
     };
 
     tracker.onCalibrationChange = (calib) => {
       setCalibrationState(calib);
       if (calib.lockedScales) {
         setScales(calib.lockedScales);
+        // Snap customer's face upon calibration lock
+        if (video.readyState >= 2) {
+          sareeCanvasRef.current?.projectFace(video, landmarks);
+        }
       }
     };
 
@@ -98,6 +118,9 @@ export function App() {
           materialManagerInstance.applyPreset(SAREE_CATALOG[0].id);
           sareeCanvasRef.current?.resetCamera();
           poseTrackerRef.current?.resetCalibration();
+          setIsCameraFrozen(false);
+          poseTrackerRef.current?.resume();
+          setPoseId('front');
           return 60;
         }
         return prev - 1;
@@ -124,13 +147,13 @@ export function App() {
     const result = materialManagerInstance.applyPreset(presetId);
     setSwitchTimeMs(result.switchTimeMs);
     setCurrentPreset(result.preset);
-    // Subtle showcase turn to highlight zari
-    sareeCanvasRef.current?.triggerAutoSpin();
   };
 
   // Recalibrate handler
   const handleRecalibrate = () => {
     recordActivity();
+    setIsCameraFrozen(false);
+    poseTrackerRef.current?.resume();
     poseTrackerRef.current?.resetCalibration();
   };
 
@@ -148,6 +171,30 @@ export function App() {
       const newMode = await poseTrackerRef.current.switchCamera();
       setFacingMode(newMode);
     }
+  };
+
+  // Toggle Camera Freeze & Unlock Pose Stills
+  const handleToggleFreezeCamera = () => {
+    recordActivity();
+    const nextFrozen = !isCameraFrozen;
+    setIsCameraFrozen(nextFrozen);
+
+    if (nextFrozen) {
+      // Lock current face and proportions onto the 3D model
+      if (videoRef.current) {
+        sareeCanvasRef.current?.projectFace(videoRef.current, landmarks);
+      }
+      poseTrackerRef.current?.pause();
+    } else {
+      poseTrackerRef.current?.resume();
+    }
+  };
+
+  // Select Couture Pose Still
+  const handleSelectPose = (newPoseId: AvatarPoseId) => {
+    recordActivity();
+    setPoseId(newPoseId);
+    sareeCanvasRef.current?.setPose(newPoseId);
   };
 
   // Screen capture & QR photo generation
@@ -181,6 +228,7 @@ export function App() {
           materialManager={materialManagerInstance}
           currentPresetId={currentPreset.id}
           scales={scales}
+          poseId={poseId}
           isIdle={isIdle}
         />
 
@@ -200,6 +248,10 @@ export function App() {
           idleTimeRemaining={idleTimeRemaining}
           facingMode={facingMode}
           onSwitchCamera={handleSwitchCamera}
+          currentPoseId={poseId}
+          onSelectPose={handleSelectPose}
+          isCameraFrozen={isCameraFrozen}
+          onToggleFreezeCamera={handleToggleFreezeCamera}
         />
 
         {/* Photo Look Capture & QR Code Modal */}

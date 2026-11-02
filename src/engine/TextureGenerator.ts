@@ -45,6 +45,9 @@ export class TextureGenerator {
 
     // Generate patterns based on preset
     switch (presetId) {
+      case 'navy-zardozi':
+        this.drawNavyZardozi(albedoCtx, normalCtx, roughnessCtx, metalnessCtx, size);
+        break;
       case 'kanjeevaram-red':
         this.drawKanjeevaramRed(albedoCtx, normalCtx, roughnessCtx, metalnessCtx, size);
         break;
@@ -86,6 +89,108 @@ export class TextureGenerator {
     metalnessMap.repeat.set(2, 2);
 
     return { map, normalMap, roughnessMap, metalnessMap };
+  }
+
+  // 0. Midnight Navy Zardozi Silk (Matching User's Couture Reference)
+  private static drawNavyZardozi(
+    albedo: CanvasRenderingContext2D,
+    normal: CanvasRenderingContext2D,
+    roughness: CanvasRenderingContext2D,
+    metalness: CanvasRenderingContext2D,
+    size: number
+  ) {
+    // Deep royal navy blue silk satin
+    albedo.fillStyle = '#081738';
+    albedo.fillRect(0, 0, size, size);
+
+    // Micro-weave silk shimmer
+    for (let y = 0; y < size; y += 4) {
+      albedo.fillStyle = y % 8 === 0 ? 'rgba(20, 48, 105, 0.4)' : 'rgba(5, 12, 30, 0.3)';
+      albedo.fillRect(0, y, size, 2);
+    }
+
+    normal.fillStyle = '#8080FF';
+    normal.fillRect(0, 0, size, size);
+
+    // Silk satin roughness (~0.24)
+    roughness.fillStyle = '#3D3D3D';
+    roughness.fillRect(0, 0, size, size);
+
+    metalness.fillStyle = '#000000';
+    metalness.fillRect(0, 0, size, size);
+
+    // Intricate Zardozi gold floral vines across the saree body
+    const jaalStep = 56;
+    for (let x = 0; x < size; x += jaalStep) {
+      for (let y = 0; y < size; y += jaalStep) {
+        // Delicate golden zardozi flower butta
+        albedo.fillStyle = '#E5C158';
+        albedo.beginPath();
+        albedo.arc(x + 28, y + 28, 8, 0, Math.PI * 2);
+        albedo.fill();
+
+        // 4 Golden sequins petals around it
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
+          const px = x + 28 + Math.cos(angle) * 14;
+          const py = y + 28 + Math.sin(angle) * 14;
+          albedo.fillStyle = '#FFF2A8';
+          albedo.beginPath();
+          albedo.arc(px, py, 3.5, 0, Math.PI * 2);
+          albedo.fill();
+        }
+
+        // Metalness for sequins and gold bullion thread
+        metalness.fillStyle = '#E0E0E0';
+        metalness.fillRect(x + 16, y + 16, 24, 24);
+
+        // Raised embossed zardozi normal
+        normal.fillStyle = '#9C7FEA';
+        normal.fillRect(x + 18, y + 18, 20, 20);
+      }
+    }
+
+    // Heavy Royal Gold Embroidered Zari Border on Hem and Pallu (bottom 260px)
+    const borderY = size - 260;
+    const borderHeight = 260;
+
+    // Solid antique gold zari base
+    albedo.fillStyle = '#D4AF37';
+    albedo.fillRect(0, borderY, size, borderHeight);
+    metalness.fillStyle = '#F5F5F5';
+    metalness.fillRect(0, borderY, size, borderHeight);
+    roughness.fillStyle = '#222222';
+    roughness.fillRect(0, borderY, size, borderHeight);
+
+    // Intricate Scalloped Floral Lace Zari Work
+    const scallopW = 40;
+    for (let x = 0; x < size; x += scallopW) {
+      // Scallop crest
+      albedo.fillStyle = '#FFE58F';
+      albedo.beginPath();
+      albedo.arc(x + scallopW / 2, borderY, scallopW / 2, Math.PI, 0);
+      albedo.fill();
+
+      // Inner navy contrast cutwork inside border
+      for (let y = borderY + 30; y < size - 30; y += 45) {
+        albedo.fillStyle = '#081738';
+        albedo.beginPath();
+        albedo.arc(x + scallopW / 2, y, 7, 0, Math.PI * 2);
+        albedo.fill();
+
+        // Raised bullion knot normal
+        normal.fillStyle = '#A06BF0';
+        normal.fillRect(x + 5, y - 5, scallopW - 10, 10);
+      }
+    }
+
+    // Double golden zari piping bands
+    for (let i = 0; i < 3; i++) {
+      const lineY = borderY - 10 - i * 14;
+      albedo.fillStyle = '#FFDF73';
+      albedo.fillRect(0, lineY, size, 5);
+      metalness.fillStyle = '#FFFFFF';
+      metalness.fillRect(0, lineY, size, 5);
+    }
   }
 
   // 1. Kanjeevaram Silk Red with rich gold zari borders

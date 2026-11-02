@@ -1,8 +1,9 @@
 import { useRef, useState, type FC, type RefObject } from 'react';
 import { Camera, Maximize2, Minimize2, MoveHorizontal, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
-import type { CalibrationState, CameraFacingMode, MorphScales, SareePreset } from '../types';
+import type { AvatarPoseId, CalibrationState, CameraFacingMode, MorphScales, SareePreset } from '../types';
 import { SAREE_CATALOG } from '../engine/MaterialManager';
 import { WebcamPiP } from './WebcamPiP';
+import { PoseSelector } from './PoseSelector';
 
 interface KioskOverlayProps {
   currentPreset: SareePreset;
@@ -19,6 +20,10 @@ interface KioskOverlayProps {
   idleTimeRemaining?: number;
   facingMode: CameraFacingMode;
   onSwitchCamera: () => void;
+  currentPoseId: AvatarPoseId;
+  onSelectPose: (poseId: AvatarPoseId) => void;
+  isCameraFrozen: boolean;
+  onToggleFreezeCamera: () => void;
 }
 
 export const KioskOverlay: FC<KioskOverlayProps> = ({
@@ -35,7 +40,11 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
   switchTimeMs = 12,
   idleTimeRemaining = 60,
   facingMode,
-  onSwitchCamera
+  onSwitchCamera,
+  currentPoseId,
+  onSelectPose,
+  isCameraFrozen,
+  onToggleFreezeCamera
 }) => {
   const carouselRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -66,7 +75,7 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
             </h1>
           </div>
           <p className="text-[9px] sm:text-[11px] text-neutral-400 tracking-wider mt-0.5 uppercase">
-            Virtual Saree Try-On
+            Virtual Saree Try-On · Live Face & Body Fit
           </p>
 
           {/* Telemetry Pill (Compact on mobile) */}
@@ -110,26 +119,38 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
         </div>
       </header>
 
-      {/* 2. CENTER VIEWPORT: Calibration / Interaction Guides */}
-      <div className="flex-1 flex flex-col items-center justify-center relative pointer-events-none">
+      {/* 2. CENTER VIEWPORT: Calibration / Pose Stills / Interaction Guides */}
+      <div className="flex-1 flex flex-col items-center justify-between relative py-2 pointer-events-none">
         {/* Aligning / Calibrating HUD guide in center if calibrating */}
-        {calibrationState.status === 'calibrating' && (
-          <div className="absolute top-1/4 flex flex-col items-center p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-neutral-950/85 border border-amber-400/50 backdrop-blur-md shadow-2xl animate-pulse">
+        {calibrationState.status === 'calibrating' && !isCameraFrozen && (
+          <div className="my-auto flex flex-col items-center p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-neutral-950/85 border border-amber-400/50 backdrop-blur-md shadow-2xl animate-pulse">
             <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mb-1.5 sm:mb-2" />
-            <p className="text-amber-300 font-medium text-xs sm:text-sm">Measuring Proportions...</p>
+            <p className="text-amber-300 font-medium text-xs sm:text-sm">Matching Face & Body...</p>
             <p className="text-neutral-400 text-[10px] sm:text-xs mt-0.5">Hold still for 2s</p>
           </div>
         )}
 
+        <div className="flex-1" />
+
+        {/* Pose Selection & Freeze Look Controller */}
+        <div className="w-full flex justify-center mb-2">
+          <PoseSelector
+            currentPoseId={currentPoseId}
+            onSelectPose={onSelectPose}
+            isCameraFrozen={isCameraFrozen}
+            onToggleFreezeCamera={onToggleFreezeCamera}
+          />
+        </div>
+
         {/* Swipe to Rotate Prompt */}
-        <div className="absolute bottom-2 sm:bottom-6 flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-2 rounded-full bg-neutral-950/70 border border-neutral-800/80 backdrop-blur-md text-[10px] sm:text-xs text-neutral-400 shadow-lg">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-neutral-950/70 border border-neutral-800/80 backdrop-blur-md text-[10px] sm:text-xs text-neutral-400 shadow-lg">
           <MoveHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 animate-pulse shrink-0" />
-          <span>Swipe or Drag to Rotate</span>
+          <span>Drag 360° to view saree drape</span>
         </div>
       </div>
 
       {/* 3. BOTTOM CAROUSEL & ACTION BUTTON */}
-      <footer className="w-full flex flex-col gap-2.5 sm:gap-4 pointer-events-auto">
+      <footer className="w-full flex flex-col gap-2 sm:gap-3 pointer-events-auto">
         {/* Selected Saree Header */}
         <div className="flex items-center justify-between gap-2 px-1 sm:px-2">
           <div className="min-w-0">

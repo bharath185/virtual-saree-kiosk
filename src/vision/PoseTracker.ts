@@ -8,6 +8,7 @@ export class PoseTracker {
   private animFrameId: number | null = null;
   private isRunning: boolean = false;
   private isDestroyed: boolean = false;
+  public isPaused: boolean = false;
 
   // Camera Facing Mode ('user' for front, 'environment' for back)
   public facingMode: CameraFacingMode = 'user';
@@ -198,6 +199,10 @@ export class PoseTracker {
 
     const detect = () => {
       if (this.isDestroyed || !this.isRunning) return;
+      if (this.isPaused) {
+        this.animFrameId = requestAnimationFrame(detect);
+        return;
+      }
 
       if (
         this.videoElement &&
@@ -395,6 +400,14 @@ export class PoseTracker {
         lockedScales: null
       });
     }
+  }
+
+  public pause(): void {
+    this.isPaused = true;
+  }
+
+  public resume(): void {
+    this.isPaused = false;
   }
 
   public resetCalibration(): void {

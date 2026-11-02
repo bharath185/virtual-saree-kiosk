@@ -47,3 +47,13 @@ export interface LandmarkPoint {
 
 export type CameraFacingMode = 'user' | 'environment';
 
+export type AvatarPoseId = 'front' | 'side-turn' | 'namaste' | 'runway' | 'pallu-back';
+
+export interface AvatarPose {
+  id: AvatarPoseId;
+  name: string;
+  label: string;
+  description: string;
+  cameraPosition: { x: number; y: number; z: number };
+  rigRotationY: number;
+}

@@ -4,6 +4,21 @@ import { TextureGenerator } from './TextureGenerator';
 
 export const SAREE_CATALOG: SareePreset[] = [
   {
+    id: 'navy-zardozi',
+    name: 'Royal Navy Zardozi Silk',
+    fabric: 'Raw Silk & Gold Bullion',
+    origin: 'Lucknow, Uttar Pradesh',
+    price: '₹ 52,000',
+    primaryColor: '#081738',
+    secondaryColor: '#D4AF37',
+    accentColor: '#FFE58F',
+    description: 'Deep midnight navy drape adorned with hand-stitched gold bullion zardozi borders and sequins floral butta.',
+    zariType: 'Gold Foil',
+    roughness: 0.24,
+    metalness: 0.80,
+    sheen: 0.90
+  },
+  {
     id: 'kanjeevaram-red',
     name: 'Kanjeevaram Bridal Crimson',
     fabric: 'Pure Mulberry Silk',

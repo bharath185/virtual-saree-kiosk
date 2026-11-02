@@ -10,6 +10,7 @@ interface PhotoModalProps {
   photoUrl: string;
   preset: SareePreset;
   scales: MorphScales;
+  isAiGenerated?: boolean;
 }
 
 export const PhotoModal: FC<PhotoModalProps> = ({
@@ -17,7 +18,8 @@ export const PhotoModal: FC<PhotoModalProps> = ({
   onClose,
   photoUrl,
   preset,
-  scales
+  scales,
+  isAiGenerated = false
 }) => {
   useEffect(() => {
     if (isOpen) {
@@ -74,7 +76,14 @@ export const PhotoModal: FC<PhotoModalProps> = ({
             <span>Divya · Virtual Atelier</span>
             <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </div>
-          <h2 className="text-lg sm:text-xl font-serif text-white font-normal">Your Couture Look</h2>
+          <h2 className="text-lg sm:text-xl font-serif text-white font-normal">
+            {isAiGenerated ? '✨ AI Photorealistic Drape' : 'Your Couture Look'}
+          </h2>
+          {isAiGenerated && (
+            <span className="inline-block mt-1 text-[9px] font-mono tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+              ⚡ Local AI Neural Engine · RTX 5060 Ti
+            </span>
+          )}
         </div>
 
         {/* Photo Viewport */}

@@ -1,5 +1,5 @@
 import { useRef, useState, type FC, type RefObject } from 'react';
-import { Camera, Maximize2, Minimize2, CheckCircle2, ShieldCheck, Zap, Sparkles, SwitchCamera, RefreshCw, Box } from 'lucide-react';
+import { Camera, Maximize2, Minimize2, CheckCircle2, ShieldCheck, Sparkles, SwitchCamera, RefreshCw, Box } from 'lucide-react';
 import type { AppViewMode, AvatarPoseId, CalibrationState, CameraFacingMode, MorphScales, SareePreset } from '../types';
 import { SAREE_CATALOG } from '../engine/MaterialManager';
 import { WebcamPiP } from './WebcamPiP';
@@ -9,6 +9,9 @@ interface KioskOverlayProps {
   currentPreset: SareePreset;
   onSelectPreset: (presetId: string) => void;
   onSnapPhoto: () => void;
+  onAITryOn: () => void;
+  isAiLoading: boolean;
+  isAiOnline: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   landmarks: any[];
   calibrationState: CalibrationState;
@@ -32,6 +35,9 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
   currentPreset,
   onSelectPreset,
   onSnapPhoto,
+  onAITryOn,
+  isAiLoading,
+  isAiOnline,
   videoRef,
   landmarks,
   calibrationState,
@@ -116,9 +122,9 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
               S:{(scales.shoulderScale * 100).toFixed(0)}% W:{(scales.waistHipScale * 100).toFixed(0)}%
             </span>
             <span className="text-neutral-600 hidden xs:inline">|</span>
-            <div className="hidden xs:flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400/90 font-mono">
-              <Zap className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400" />
-              <span>{switchTimeMs}ms</span>
+            <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400/90 font-mono">
+              <span className={`w-1.5 h-1.5 rounded-full ${isAiOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span>{isAiOnline ? 'RTX 5060 Ti AI' : `${switchTimeMs}ms`}</span>
             </div>
           </div>
         </div>
@@ -225,22 +231,38 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
             </p>
           </div>
 
-          {/* Price Tag & Snap Button */}
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <div className="text-right">
+          {/* Price Tag & Action Buttons */}
+          <div className="flex items-center gap-1.5 xs:gap-2 sm:gap-3 shrink-0">
+            <div className="text-right hidden sm:block">
               <span className="text-[8px] sm:text-[10px] uppercase text-neutral-400 block tracking-wider">Price</span>
               <span className="text-sm sm:text-xl font-semibold text-white font-mono">
                 {currentPreset.price}
               </span>
             </div>
 
+            {/* AI Photorealistic Try-On Button */}
+            <button
+              onClick={onAITryOn}
+              disabled={isAiLoading}
+              title="Instant AI Photorealistic Cloth Drape (RTX 5060 Ti Local Engine)"
+              className="py-2.5 px-3 sm:py-3.5 sm:px-5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 hover:from-amber-300 hover:to-yellow-200 text-neutral-950 font-bold text-xs sm:text-sm tracking-wide flex items-center gap-1.5 sm:gap-2 shadow-xl shadow-amber-400/30 transition-all transform active:scale-95 cursor-pointer shrink-0 disabled:opacity-60"
+            >
+              {isAiLoading ? (
+                <div className="w-3.5 h-3.5 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neutral-950 fill-neutral-950" />
+              )}
+              <span className="hidden xs:inline">{isAiLoading ? 'Synthesizing...' : 'AI Try-On'}</span>
+              <span className="xs:hidden">{isAiLoading ? 'AI...' : 'AI'}</span>
+            </button>
+
+            {/* Snap Camera Look Button */}
             <button
               onClick={onSnapPhoto}
-              className="py-2.5 px-3.5 sm:py-3.5 sm:px-6 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-neutral-950 font-bold text-xs sm:text-sm tracking-wide flex items-center gap-1.5 sm:gap-2.5 shadow-xl shadow-amber-500/25 transition-all transform active:scale-95 cursor-pointer shrink-0"
+              className="py-2.5 px-3 sm:py-3.5 sm:px-5 rounded-xl sm:rounded-2xl bg-neutral-900 border border-amber-500/40 hover:bg-neutral-800 text-white font-semibold text-xs sm:text-sm tracking-wide flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all transform active:scale-95 cursor-pointer shrink-0"
             >
-              <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neutral-950 stroke-[2.5]" />
-              <span className="hidden xs:inline">Snap Look</span>
-              <span className="xs:hidden">Snap</span>
+              <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 stroke-[2]" />
+              <span className="hidden xs:inline">Snap</span>
             </button>
           </div>
         </div>

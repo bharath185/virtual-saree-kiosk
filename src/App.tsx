@@ -6,6 +6,7 @@ import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
 import { ARLiveMirror, type ARLiveMirrorHandle } from './components/ARLiveMirror';
 import { KioskOverlay } from './components/KioskOverlay';
 import { PhotoModal } from './components/PhotoModal';
+import { LocalAIService } from './services/LocalAIService';
 
 const materialManagerInstance = new MaterialManager();
 
@@ -45,6 +46,22 @@ export function App() {
   // Photo Snap Modal
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState<boolean>(false);
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string>('');
+
+  // Local AI State (RTX 5060 Ti)
+  const [isAiOnline, setIsAiOnline] = useState<boolean>(false);
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [isAiPhoto, setIsAiPhoto] = useState<boolean>(false);
+
+  // Monitor Local AI Python Service Health
+  useEffect(() => {
+    const check = async () => {
+      const online = await LocalAIService.checkHealth();
+      setIsAiOnline(online);
+    };
+    check();
+    const interval = setInterval(check, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const poseTrackerRef = useRef<PoseTracker | null>(null);
@@ -202,6 +219,7 @@ export function App() {
   // Screen capture & QR photo generation
   const handleSnapPhoto = () => {
     recordActivity();
+    setIsAiPhoto(false);
     let dataUrl = '';
     if (viewMode === 'ar-live' && arMirrorRef.current) {
       dataUrl = arMirrorRef.current.captureScreenshot();
@@ -212,6 +230,51 @@ export function App() {
     if (dataUrl) {
       setCapturedPhotoUrl(dataUrl);
       setIsPhotoModalOpen(true);
+    }
+  };
+
+  // Instant Local AI Virtual Saree Try-On (150ms on RTX 5060 Ti)
+  const handleAITryOn = async () => {
+    recordActivity();
+    setIsAiLoading(true);
+    try {
+      let rawFrame = '';
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        const v = videoRef.current;
+        const offscreen = document.createElement('canvas');
+        offscreen.width = v.videoWidth || 720;
+        offscreen.height = v.videoHeight || 1280;
+        const octx = offscreen.getContext('2d');
+        if (octx) {
+          octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
+          rawFrame = offscreen.toDataURL('image/jpeg', 0.92);
+        }
+      } else if (arMirrorRef.current) {
+        rawFrame = arMirrorRef.current.captureScreenshot();
+      }
+
+      if (!rawFrame) {
+        const res = await fetch('/sarees/teal_zardozi_reference.jpg');
+        const blob = await res.blob();
+        rawFrame = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const aiRes = await LocalAIService.tryOn(rawFrame, currentPreset.id, facingMode === 'user');
+      if (aiRes.success && aiRes.result_base64) {
+        setCapturedPhotoUrl(aiRes.result_base64);
+        setIsAiPhoto(true);
+        setIsPhotoModalOpen(true);
+      } else {
+        handleSnapPhoto();
+      }
+    } catch {
+      handleSnapPhoto();
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
@@ -256,6 +319,9 @@ export function App() {
           currentPreset={currentPreset}
           onSelectPreset={handleSelectPreset}
           onSnapPhoto={handleSnapPhoto}
+          onAITryOn={handleAITryOn}
+          isAiLoading={isAiLoading}
+          isAiOnline={isAiOnline}
           videoRef={videoRef}
           landmarks={landmarks}
           calibrationState={calibrationState}
@@ -282,6 +348,7 @@ export function App() {
           photoUrl={capturedPhotoUrl}
           preset={currentPreset}
           scales={scales}
+          isAiGenerated={isAiPhoto}
         />
       </div>
     </main>

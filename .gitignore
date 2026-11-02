@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python & AI weights
+__pycache__/
+*.pyc
+*.pt
+*.onnx
+backend/test_output_*.jpg

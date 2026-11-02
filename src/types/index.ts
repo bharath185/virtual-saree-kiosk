@@ -47,7 +47,10 @@ export interface LandmarkPoint {
 
 export type CameraFacingMode = 'user' | 'environment';
 
+export type AppViewMode = 'ar-live' | '3d-atelier';
+
 export type AvatarPoseId = 'front' | 'side-turn' | 'namaste' | 'runway' | 'pallu-back';
+
 
 export interface AvatarPose {
   id: AvatarPoseId;

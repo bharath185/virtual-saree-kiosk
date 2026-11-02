@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { AvatarPoseId, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
+import type { AppViewMode, AvatarPoseId, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
 import { MaterialManager, SAREE_CATALOG } from './engine/MaterialManager';
 import { PoseTracker } from './vision/PoseTracker';
 import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
+import { ARLiveMirror, type ARLiveMirrorHandle } from './components/ARLiveMirror';
 import { KioskOverlay } from './components/KioskOverlay';
 import { PhotoModal } from './components/PhotoModal';
 
@@ -30,6 +31,9 @@ export function App() {
   const [isSimulated, setIsSimulated] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
 
+  // View Mode: 'ar-live' (Camera full-screen replacing saree on live people) vs '3d-atelier'
+  const [viewMode, setViewMode] = useState<AppViewMode>('ar-live');
+
   // Pose Stills & Camera Freeze Mode
   const [poseId, setPoseId] = useState<AvatarPoseId>('front');
   const [isCameraFrozen, setIsCameraFrozen] = useState<boolean>(false);
@@ -45,8 +49,9 @@ export function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const poseTrackerRef = useRef<PoseTracker | null>(null);
   const sareeCanvasRef = useRef<SareeCanvasHandle | null>(null);
+  const arMirrorRef = useRef<ARLiveMirrorHandle | null>(null);
 
-  // Throttle face projection to every 300ms to preserve 60fps WebGL rendering
+  // Throttle face projection to every 300ms
   const lastFaceProjectionTime = useRef<number>(0);
 
   // Reset idle timer on any touch or interaction
@@ -67,7 +72,7 @@ export function App() {
       setLandmarks(lms);
       setScales(liveScales);
 
-      // Dynamically project customer's face onto 3D model head if not frozen
+      // Project face if in 3D mode
       const now = performance.now();
       if (!tracker.isPaused && now - lastFaceProjectionTime.current > 250) {
         lastFaceProjectionTime.current = now;
@@ -81,7 +86,6 @@ export function App() {
       setCalibrationState(calib);
       if (calib.lockedScales) {
         setScales(calib.lockedScales);
-        // Snap customer's face upon calibration lock
         if (video.readyState >= 2) {
           sareeCanvasRef.current?.projectFace(video, landmarks);
         }
@@ -112,7 +116,6 @@ export function App() {
     const interval = window.setInterval(() => {
       setIdleTimeRemaining((prev) => {
         if (prev <= 1) {
-          // Reset to showcase state
           setIsIdle(true);
           setCurrentPreset(SAREE_CATALOG[0]);
           materialManagerInstance.applyPreset(SAREE_CATALOG[0].id);
@@ -180,7 +183,6 @@ export function App() {
     setIsCameraFrozen(nextFrozen);
 
     if (nextFrozen) {
-      // Lock current face and proportions onto the 3D model
       if (videoRef.current) {
         sareeCanvasRef.current?.projectFace(videoRef.current, landmarks);
       }
@@ -200,8 +202,14 @@ export function App() {
   // Screen capture & QR photo generation
   const handleSnapPhoto = () => {
     recordActivity();
-    if (sareeCanvasRef.current) {
-      const dataUrl = sareeCanvasRef.current.captureScreenshot();
+    let dataUrl = '';
+    if (viewMode === 'ar-live' && arMirrorRef.current) {
+      dataUrl = arMirrorRef.current.captureScreenshot();
+    } else if (sareeCanvasRef.current) {
+      dataUrl = sareeCanvasRef.current.captureScreenshot();
+    }
+
+    if (dataUrl) {
       setCapturedPhotoUrl(dataUrl);
       setIsPhotoModalOpen(true);
     }
@@ -220,17 +228,28 @@ export function App() {
         className="hidden"
       />
 
-      {/* Portrait Kiosk Canvas Frame (Fluid 100dvh on mobile, 9:16 aspect ratio on tablet/desktop) */}
+      {/* Portrait Kiosk Frame (Fluid 100dvh on mobile, 9:16 aspect ratio on desktop/kiosk) */}
       <div className="relative w-full h-[100dvh] max-w-full sm:max-w-[1080px] sm:max-h-[1920px] sm:aspect-[9/16] bg-neutral-950 shadow-2xl flex flex-col overflow-hidden">
-        {/* 3D WebGL Viewport */}
-        <SareeCanvas
-          ref={sareeCanvasRef}
-          materialManager={materialManagerInstance}
-          currentPresetId={currentPreset.id}
-          scales={scales}
-          poseId={poseId}
-          isIdle={isIdle}
-        />
+        {/* Fullscreen Viewport: Live AR Smart Mirror (Default) OR 3D Atelier */}
+        {viewMode === 'ar-live' ? (
+          <ARLiveMirror
+            ref={arMirrorRef}
+            videoRef={videoRef}
+            landmarks={landmarks}
+            currentPreset={currentPreset}
+            facingMode={facingMode}
+            isFrozen={isCameraFrozen}
+          />
+        ) : (
+          <SareeCanvas
+            ref={sareeCanvasRef}
+            materialManager={materialManagerInstance}
+            currentPresetId={currentPreset.id}
+            scales={scales}
+            poseId={poseId}
+            isIdle={isIdle}
+          />
+        )}
 
         {/* HUD & Kiosk Touch Controls */}
         <KioskOverlay
@@ -252,6 +271,8 @@ export function App() {
           onSelectPose={handleSelectPose}
           isCameraFrozen={isCameraFrozen}
           onToggleFreezeCamera={handleToggleFreezeCamera}
+          viewMode={viewMode}
+          onToggleViewMode={setViewMode}
         />
 
         {/* Photo Look Capture & QR Code Modal */}

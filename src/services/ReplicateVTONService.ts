@@ -3,15 +3,16 @@ export interface VTONResult {
   imageUrl?: string;
   error?: string;
   executionTimeSec?: number;
+  isCreditError?: boolean;
 }
 
-const IDM_VTON_VERSION = 'c871bb9b046616b680442285f002e8bcbec190f9d3d499b82b3380f90c14d9f4';
+const IDM_VTON_VERSION = '0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985';
 
 export class ReplicateVTONService {
   private static readonly STORAGE_KEY = 'divya_replicate_token';
 
   public static getStoredToken(): string {
-    return localStorage.getItem(this.STORAGE_KEY) || '';
+    return localStorage.getItem(this.STORAGE_KEY) || (import.meta.env.VITE_REPLICATE_API_TOKEN as string) || '';
   }
 
   public static setStoredToken(token: string): void {
@@ -28,14 +29,14 @@ export class ReplicateVTONService {
   public static async tryOnWithReplicate(
     humanImageBase64: string,
     garmentImageUrl: string,
-    garmentDescription: string = 'Indian Silk Saree with Gold Embroidery',
+    garmentDescription: string = 'Indian Silk Saree with Gold Bullion Zardozi Border',
     apiToken?: string
   ): Promise<VTONResult> {
     const token = apiToken || this.getStoredToken();
     if (!token) {
       return {
         success: false,
-        error: 'Replicate API Token is required. Please enter your free Replicate API key in Settings.'
+        error: 'Replicate API Token is required.'
       };
     }
 
@@ -57,15 +58,21 @@ export class ReplicateVTONService {
             garm_img: garmentImageUrl,
             garment_des: garmentDescription,
             category: 'dresses',
-            crop: false,
-            steps: 30
+            crop: true,
+            steps: 25
           }
         })
       });
 
       if (!createRes.ok) {
         const errJson = await createRes.json().catch(() => ({}));
-        throw new Error(errJson.detail || `Replicate API error: ${createRes.status} ${createRes.statusText}`);
+        const errMsg = errJson.detail || errJson.title || `Replicate API error: ${createRes.status}`;
+        const isCredit = createRes.status === 402 || errMsg.toLowerCase().includes('credit');
+        return {
+          success: false,
+          error: errMsg,
+          isCreditError: isCredit
+        };
       }
 
       let prediction = await createRes.json();

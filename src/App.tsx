@@ -273,6 +273,16 @@ export function App() {
     recordActivity();
     setIsAiLoading(true);
     try {
+      // If using standard reference model without live camera or custom upload:
+      const hasLiveWebcam = Boolean(videoRef.current && videoRef.current.readyState >= 2 && !isSimulated);
+      if (!customPersonImage && !hasLiveWebcam) {
+        setCapturedPhotoUrl(`/sarees/looks/look_${currentPreset.id}.jpg`);
+        setIsAiPhoto(true);
+        setIsPhotoModalOpen(true);
+        setIsAiLoading(false);
+        return;
+      }
+
       let rawFrame = customPersonImage || '';
 
       if (!rawFrame) {
@@ -292,13 +302,11 @@ export function App() {
       }
 
       if (!rawFrame) {
-        const res = await fetch('/sarees/teal_zardozi_reference.jpg');
-        const blob = await res.blob();
-        rawFrame = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
+        setCapturedPhotoUrl(`/sarees/looks/look_${currentPreset.id}.jpg`);
+        setIsAiPhoto(true);
+        setIsPhotoModalOpen(true);
+        setIsAiLoading(false);
+        return;
       }
 
       // If user chose Cloud IDM-VTON (Replicate)

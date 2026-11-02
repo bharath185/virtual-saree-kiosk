@@ -25,9 +25,9 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
 
     useEffect(() => {
       const img = new Image();
-      img.src = '/sarees/teal_zardozi_reference.jpg';
+      img.src = `/sarees/looks/look_${currentPreset.id}.jpg`;
       demoRefImg.current = img;
-    }, []);
+    }, [currentPreset.id]);
 
     useEffect(() => {
       if (customPersonImage) {
@@ -158,7 +158,7 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
         }
 
         // 2. Render Draped Saree directly on top of the live customer's body!
-        if (landmarks && landmarks.length >= 25) {
+        if ((hasLiveVideo || customImgRef.current) && landmarks && landmarks.length >= 25) {
           ARSareeEngine.renderLiveSaree(ctx, w, h, landmarks, currentPreset, isMirrored);
         }
 

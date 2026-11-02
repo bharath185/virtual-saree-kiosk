@@ -149,49 +149,50 @@ def perform_photorealistic_vton(
     h_s, w_s = saree_rgba.shape[:2]
 
     # Reference coordinates inside the 565x800 photographic saree cutout:
-    # REF_MID_SHOULDER = (268, 222), REF_SHOULDER_WIDTH = 105, REF_HEM_Y = 780
-    ref_mid_x = 268.0
-    ref_mid_y = 222.0
-    ref_sh_w = 105.0
+    ref_mid_x = 271.4
+    ref_mid_y = 192.0
+    ref_sh_w = 111.0
+    ref_torso_h = 210.5
+    ref_angle = -6.43
 
     # Determine customer's shoulder positions
-    l_sh = keypoints.get("l_sh")
-    r_sh = keypoints.get("r_sh")
+    l_sh = keypoints.get("l_sh") # Anatomical left (viewer right)
+    r_sh = keypoints.get("r_sh") # Anatomical right (viewer left)
     l_hip = keypoints.get("l_hip")
     r_hip = keypoints.get("r_hip")
 
     if l_sh is not None and r_sh is not None and l_sh[2] > 0.2 and r_sh[2] > 0.2:
         sh_mid_x = (l_sh[0] + r_sh[0]) / 2.0
         sh_mid_y = (l_sh[1] + r_sh[1]) / 2.0
-        sh_dx = r_sh[0] - l_sh[0]
-        sh_dy = r_sh[1] - l_sh[1]
+        # Vector from right shoulder to left shoulder (image left to right)
+        sh_dx = l_sh[0] - r_sh[0]
+        sh_dy = l_sh[1] - r_sh[1]
         target_sh_dist = np.hypot(sh_dx, sh_dy)
         target_angle = np.degrees(np.arctan2(sh_dy, sh_dx))
+        rot_angle = target_angle - ref_angle
     else:
-        # Fallback to center frame
         sh_mid_x = w_p * 0.5
         sh_mid_y = h_p * 0.28
         target_sh_dist = w_p * 0.32
-        target_angle = 0.0
+        rot_angle = 0.0
 
     # Determine body length / vertical scale
     if l_hip is not None and r_hip is not None and l_hip[2] > 0.2:
         hip_mid_y = (l_hip[1] + r_hip[1]) / 2.0
         torso_h = abs(hip_mid_y - sh_mid_y)
-        target_garment_h = max(torso_h * 2.8, h_p * 0.72)
     else:
-        target_garment_h = h_p * 0.75
+        torso_h = ref_torso_h
 
     # Compute scale factors
-    scale_x = (target_sh_dist * 1.38) / ref_sh_w
-    scale_y = target_garment_h / (h_s - ref_mid_y)
+    scale_x = target_sh_dist / ref_sh_w
+    scale_y = torso_h / ref_torso_h
 
     # 1. Transform and scale the saree garment
-    # Flip horizontally if mirrored camera
     garment = saree_rgba.copy()
     if is_mirrored:
         garment = cv2.flip(garment, 1)
         ref_mid_x = w_s - ref_mid_x
+        rot_angle = -rot_angle
 
     # Resize saree
     new_w = max(10, int(w_s * scale_x))
@@ -202,7 +203,7 @@ def perform_photorealistic_vton(
     scaled_ref_y = int(ref_mid_y * scale_y)
 
     # Rotation matrix around the shoulder center
-    M = cv2.getRotationMatrix2D((scaled_ref_x, scaled_ref_y), target_angle, 1.0)
+    M = cv2.getRotationMatrix2D((scaled_ref_x, scaled_ref_y), rot_angle, 1.0)
     # Translate so (scaled_ref_x, scaled_ref_y) lands on (sh_mid_x, sh_mid_y)
     M[0, 2] += (sh_mid_x - scaled_ref_x)
     M[1, 2] += (sh_mid_y - scaled_ref_y)
@@ -221,8 +222,6 @@ def perform_photorealistic_vton(
     saree_alpha = warped_saree[:, :, 3].astype(np.float32) / 255.0
 
     # 2. Arm & Hand Occlusion Mask
-    # If the user's arm or hand is resting on the waist or in front of the saree,
-    # we composite the user's real arm OVER the saree!
     arm_occlusion_mask = np.zeros((h_p, w_p), dtype=np.uint8)
     for arm_pts in [
         [keypoints.get("l_el"), keypoints.get("l_wr")],
@@ -230,36 +229,35 @@ def perform_photorealistic_vton(
     ]:
         p1, p2 = arm_pts
         if p1 is not None and p2 is not None and p1[2] > 0.3 and p2[2] > 0.3:
-            # Check if arm is within the saree region
             pt1 = (int(p1[0]), int(p1[1]))
             pt2 = (int(p2[0]), int(p2[1]))
             cv2.line(arm_occlusion_mask, pt1, pt2, 255, thickness=int(target_sh_dist * 0.22))
 
-    # Combine arm line corridor with actual detected skin mask
     real_arm_skin = cv2.bitwise_and(skin_mask, arm_occlusion_mask)
     real_arm_skin_norm = (cv2.GaussianBlur(real_arm_skin, (7, 7), 0).astype(np.float32) / 255.0)
 
-    # 3. Ambient Lighting & Fabric Sheen Pass
-    # Transfer ambient brightness of the customer's room into the saree
-    gray_person = cv2.cvtColor(person_bgr, cv2.COLOR_BGR2GRAY)
-    mean_val = np.mean(gray_person)
-    brightness_ratio = np.clip(mean_val / 128.0, 0.85, 1.25)
-    saree_bgr = cv2.convertScaleAbs(saree_bgr, alpha=brightness_ratio, beta=4)
-
-    # 4. Multi-Layer Realistic Alpha Blending
-    # Garment alpha minus customer's front arms (so arms show naturally in front)
+    # 3. Dynamic Alpha Blending
     effective_saree_alpha = np.clip(saree_alpha - (real_arm_skin_norm * 0.95), 0.0, 1.0)
     effective_saree_alpha_3 = np.stack([effective_saree_alpha] * 3, axis=-1)
 
-    # Composite: Person Background + Warped Saree
     composite = (person_bgr.astype(np.float32) * (1.0 - effective_saree_alpha_3) +
                  saree_bgr.astype(np.float32) * effective_saree_alpha_3)
 
     # Re-blend customer's real arms, face, and neck skin firmly on top
     arm_alpha_3 = np.stack([real_arm_skin_norm] * 3, axis=-1)
     composite = composite * (1.0 - arm_alpha_3) + person_bgr.astype(np.float32) * arm_alpha_3
+    composite = np.clip(composite, 0, 255).astype(np.uint8)
 
-    return np.clip(composite, 0, 255).astype(np.uint8)
+    # Inpaint residual old strap colors around neck/shoulder
+    hsv = cv2.cvtColor(composite, cv2.COLOR_BGR2HSV)
+    teal_mask = cv2.inRange(hsv, np.array([80, 45, 35]), np.array([125, 255, 255]))
+    torso_roi = np.zeros_like(teal_mask)
+    torso_roi[int(sh_mid_y - 40):int(sh_mid_y + 80), int(sh_mid_x - 100):int(sh_mid_x + 100)] = 255
+    clean_mask = cv2.bitwise_and(teal_mask, torso_roi)
+    if np.sum(clean_mask) > 0:
+        composite = cv2.inpaint(composite, clean_mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
+
+    return composite
 
 @app.get("/api/status")
 def get_status():

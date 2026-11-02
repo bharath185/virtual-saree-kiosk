@@ -12,20 +12,34 @@ interface ARLiveMirrorProps {
   currentPreset: SareePreset;
   facingMode: CameraFacingMode;
   isFrozen: boolean;
+  customPersonImage?: string | null;
 }
 
 export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
-  ({ videoRef, landmarks, currentPreset, facingMode, isFrozen }, ref) => {
+  ({ videoRef, landmarks, currentPreset, facingMode, isFrozen, customPersonImage }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const animFrameId = useRef<number | null>(null);
     const frozenFrameRef = useRef<HTMLCanvasElement | null>(null);
     const demoRefImg = useRef<HTMLImageElement | null>(null);
+    const customImgRef = useRef<HTMLImageElement | null>(null);
 
     useEffect(() => {
       const img = new Image();
       img.src = '/sarees/teal_zardozi_reference.jpg';
       demoRefImg.current = img;
     }, []);
+
+    useEffect(() => {
+      if (customPersonImage) {
+        const img = new Image();
+        img.src = customPersonImage;
+        img.onload = () => {
+          customImgRef.current = img;
+        };
+      } else {
+        customImgRef.current = null;
+      }
+    }, [customPersonImage]);
 
     useImperativeHandle(ref, () => ({
       captureScreenshot: () => {
@@ -69,7 +83,21 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
           video.play().catch(() => {});
         }
 
-        if (hasLiveVideo && video) {
+        if (customImgRef.current && customImgRef.current.complete) {
+          // Draw uploaded/selected custom customer photo
+          const img = customImgRef.current;
+          const imgAspect = img.width / img.height;
+          const canvasAspect = w / h;
+          let sx = 0, sy = 0, sw = img.width, sh = img.height;
+          if (imgAspect > canvasAspect) {
+            sw = img.height * canvasAspect;
+            sx = (img.width - sw) / 2;
+          } else {
+            sh = img.width / canvasAspect;
+            sy = (img.height - sh) / 2;
+          }
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+        } else if (hasLiveVideo && video) {
           // Draw full-screen live video feed (preserving aspect ratio)
           const vw = video.videoWidth || 640;
           const vh = video.videoHeight || 480;

@@ -6,7 +6,10 @@ import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
 import { ARLiveMirror, type ARLiveMirrorHandle } from './components/ARLiveMirror';
 import { KioskOverlay } from './components/KioskOverlay';
 import { PhotoModal } from './components/PhotoModal';
+import { VTONSettingsModal } from './components/VTONSettingsModal';
+import { UploadModal } from './components/UploadModal';
 import { LocalAIService } from './services/LocalAIService';
+import { ReplicateVTONService } from './services/ReplicateVTONService';
 
 const materialManagerInstance = new MaterialManager();
 
@@ -48,6 +51,14 @@ export function App() {
   // Photo Snap Modal
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState<boolean>(false);
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string>('');
+
+  // AI Engine State: 'replicate' (Cloud IDM-VTON) vs 'local' (RTX 5060 Ti)
+  const [selectedEngine, setSelectedEngine] = useState<'replicate' | 'local'>(
+    ReplicateVTONService.getStoredToken() ? 'replicate' : 'local'
+  );
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [customPersonImage, setCustomPersonImage] = useState<string | null>(null);
 
   // Local AI State (RTX 5060 Ti)
   const [isAiOnline, setIsAiOnline] = useState<boolean>(false);
@@ -257,24 +268,27 @@ export function App() {
     }
   };
 
-  // Instant Local AI Virtual Saree Try-On (150ms on RTX 5060 Ti)
+  // Virtual Saree Try-On (Cloud Replicate IDM-VTON or Local RTX 5060 Ti)
   const handleAITryOn = async () => {
     recordActivity();
     setIsAiLoading(true);
     try {
-      let rawFrame = '';
-      if (videoRef.current && videoRef.current.readyState >= 2) {
-        const v = videoRef.current;
-        const offscreen = document.createElement('canvas');
-        offscreen.width = v.videoWidth || 720;
-        offscreen.height = v.videoHeight || 1280;
-        const octx = offscreen.getContext('2d');
-        if (octx) {
-          octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
-          rawFrame = offscreen.toDataURL('image/jpeg', 0.92);
+      let rawFrame = customPersonImage || '';
+
+      if (!rawFrame) {
+        if (videoRef.current && videoRef.current.readyState >= 1) {
+          const v = videoRef.current;
+          const offscreen = document.createElement('canvas');
+          offscreen.width = v.videoWidth || 720;
+          offscreen.height = v.videoHeight || 1280;
+          const octx = offscreen.getContext('2d');
+          if (octx) {
+            octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
+            rawFrame = offscreen.toDataURL('image/jpeg', 0.92);
+          }
+        } else if (arMirrorRef.current) {
+          rawFrame = arMirrorRef.current.captureScreenshot();
         }
-      } else if (arMirrorRef.current) {
-        rawFrame = arMirrorRef.current.captureScreenshot();
       }
 
       if (!rawFrame) {
@@ -287,6 +301,33 @@ export function App() {
         });
       }
 
+      // If user chose Cloud IDM-VTON (Replicate)
+      if (selectedEngine === 'replicate') {
+        const token = ReplicateVTONService.getStoredToken();
+        if (!token) {
+          setIsSettingsModalOpen(true);
+          setIsAiLoading(false);
+          return;
+        }
+
+        const garmentUrl = `https://virtual-saree-kiosk.onrender.com/sarees/teal_zardozi_reference.jpg`;
+        const repRes = await ReplicateVTONService.tryOnWithReplicate(
+          rawFrame,
+          garmentUrl,
+          `${currentPreset.name} ${currentPreset.fabric} with gold bullion zardozi border and knife pleats`
+        );
+
+        if (repRes.success && repRes.imageUrl) {
+          setCapturedPhotoUrl(repRes.imageUrl);
+          setIsAiPhoto(true);
+          setIsPhotoModalOpen(true);
+          return;
+        } else {
+          console.warn('Replicate failed, falling back to local engine:', repRes.error);
+        }
+      }
+
+      // Local Engine (RTX 5060 Ti)
       const aiRes = await LocalAIService.tryOn(rawFrame, currentPreset.id, facingMode === 'user');
       if (aiRes.success && aiRes.result_base64) {
         setCapturedPhotoUrl(aiRes.result_base64);
@@ -349,6 +390,7 @@ export function App() {
             currentPreset={currentPreset}
             facingMode={facingMode}
             isFrozen={isCameraFrozen}
+            customPersonImage={customPersonImage}
           />
         ) : (
           <SareeCanvas
@@ -367,6 +409,11 @@ export function App() {
           onSelectPreset={handleSelectPreset}
           onSnapPhoto={handleSnapPhoto}
           onAITryOn={handleAITryOn}
+          onOpenUpload={() => setIsUploadModalOpen(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          selectedEngine={selectedEngine}
+          hasCustomPhoto={Boolean(customPersonImage)}
+          onClearCustomPhoto={() => setCustomPersonImage(null)}
           isAiLoading={isAiLoading}
           isAiOnline={isAiOnline}
           videoRef={videoRef}
@@ -386,6 +433,21 @@ export function App() {
           onToggleFreezeCamera={handleToggleFreezeCamera}
           viewMode={viewMode}
           onToggleViewMode={setViewMode}
+        />
+
+        {/* Photo Upload Modal */}
+        <UploadModal
+          isOpen={isUploadModalOpen}
+          onClose={() => setIsUploadModalOpen(false)}
+          onSelectPhoto={(dataUrl) => setCustomPersonImage(dataUrl)}
+        />
+
+        {/* AI VTON Settings Modal */}
+        <VTONSettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+          selectedEngine={selectedEngine}
+          onSelectEngine={(engine) => setSelectedEngine(engine)}
         />
 
         {/* Photo Look Capture & QR Code Modal */}

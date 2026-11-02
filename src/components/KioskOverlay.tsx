@@ -1,5 +1,5 @@
 import { useRef, useState, type FC, type RefObject } from 'react';
-import { Camera, Maximize2, Minimize2, CheckCircle2, ShieldCheck, Sparkles, SwitchCamera, RefreshCw, Box } from 'lucide-react';
+import { Camera, Maximize2, Minimize2, CheckCircle2, ShieldCheck, Sparkles, SwitchCamera, RefreshCw, Box, Upload, Settings } from 'lucide-react';
 import type { AppViewMode, AvatarPoseId, CalibrationState, CameraFacingMode, MorphScales, SareePreset } from '../types';
 import { SAREE_CATALOG } from '../engine/MaterialManager';
 import { WebcamPiP } from './WebcamPiP';
@@ -10,6 +10,11 @@ interface KioskOverlayProps {
   onSelectPreset: (presetId: string) => void;
   onSnapPhoto: () => void;
   onAITryOn: () => void;
+  onOpenUpload: () => void;
+  onOpenSettings: () => void;
+  selectedEngine: 'replicate' | 'local';
+  hasCustomPhoto: boolean;
+  onClearCustomPhoto: () => void;
   isAiLoading: boolean;
   isAiOnline: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -36,6 +41,11 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
   onSelectPreset,
   onSnapPhoto,
   onAITryOn,
+  onOpenUpload,
+  onOpenSettings,
+  selectedEngine,
+  hasCustomPhoto,
+  onClearCustomPhoto,
   isAiLoading,
   isAiOnline,
   videoRef,
@@ -123,15 +133,47 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
             </span>
             <span className="text-neutral-600 hidden xs:inline">|</span>
             <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-400/90 font-mono">
-              <span className={`w-1.5 h-1.5 rounded-full ${isAiOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              <span>{isAiOnline ? 'RTX 5060 Ti AI' : `${switchTimeMs}ms`}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${selectedEngine === 'replicate' ? 'bg-amber-400 animate-pulse' : (isAiOnline ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500')}`} />
+              <span>{selectedEngine === 'replicate' ? 'Cloud IDM-VTON' : (isAiOnline ? 'RTX 5060 Ti AI' : `${switchTimeMs}ms`)}</span>
             </div>
           </div>
+
+          {/* Custom photo indicator */}
+          {hasCustomPhoto && (
+            <div className="flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] text-amber-300">
+              <span>Photo Subject Active</span>
+              <button
+                onClick={onClearCustomPhoto}
+                className="underline hover:text-white cursor-pointer ml-1"
+              >
+                Reset to Live Camera
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Top Right Controls */}
         <div className="flex flex-col items-end gap-2 sm:gap-3 pointer-events-auto shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Upload Photo Button (Works on all devices without webcam permissions) */}
+            <button
+              onClick={onOpenUpload}
+              title="Upload photo or choose selfie"
+              className="p-1.5 sm:p-2.5 rounded-full bg-neutral-900/80 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-white backdrop-blur-md transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="text-[10px] font-mono hidden sm:inline">Upload Photo</span>
+            </button>
+
+            {/* AI Settings Button */}
+            <button
+              onClick={onOpenSettings}
+              title="AI Engine Settings (Replicate / Local RTX)"
+              className="p-1.5 sm:p-2.5 rounded-full bg-neutral-900/80 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-white backdrop-blur-md transition-colors cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+
             {/* Quick Switch Camera Button in AR mode */}
             {viewMode === 'ar-live' && (
               <button

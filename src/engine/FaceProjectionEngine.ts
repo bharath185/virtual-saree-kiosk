@@ -128,6 +128,61 @@ export class FaceProjectionEngine {
   }
 
   /**
+   * Projects a static customer photo / selfie onto the 3D head texture
+   */
+  public static projectFaceFromImage(
+    img: HTMLImageElement | HTMLCanvasElement
+  ): THREE.CanvasTexture {
+    if (!this.canvas || !this.ctx || !this.texture) {
+      this.initialize();
+    }
+
+    const ctx = this.ctx!;
+    const size = 512;
+
+    this.drawRealisticCoutureFace();
+
+    try {
+      const iw = (img as HTMLImageElement).naturalWidth || img.width || 512;
+      const ih = (img as HTMLImageElement).naturalHeight || img.height || 512;
+
+      // Extract the face region (typically center-top 10% to 35% of a portrait photo)
+      const faceX = iw * 0.5;
+      const faceY = ih * 0.22;
+      const faceRadius = Math.min(iw, ih) * 0.22;
+
+      const sx = Math.max(0, faceX - faceRadius);
+      const sy = Math.max(0, faceY - faceRadius * 0.9);
+      const sw = Math.min(iw - sx, faceRadius * 2);
+      const sh = Math.min(ih - sy, faceRadius * 2.2);
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = size;
+      tempCanvas.height = size;
+      const tCtx = tempCanvas.getContext('2d')!;
+
+      tCtx.save();
+      tCtx.beginPath();
+      tCtx.ellipse(size / 2, size * 0.48, size * 0.34, size * 0.42, 0, 0, Math.PI * 2);
+      tCtx.clip();
+      tCtx.drawImage(img, sx, sy, sw, sh, size * 0.12, size * 0.08, size * 0.76, size * 0.82);
+      tCtx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(tempCanvas, 0, 0);
+      ctx.restore();
+
+      this.drawEthnicAccents(ctx, size);
+      this.texture!.needsUpdate = true;
+    } catch (e) {
+      console.warn('Face projection from image warning:', e);
+    }
+
+    return this.texture!;
+  }
+
+  /**
    * Generates a high-fashion, realistic Indian couture face texture
    */
   public static drawRealisticCoutureFace(): void {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Sparkles, X } from 'lucide-react';
 import type { AppViewMode, AvatarPoseId, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
 import { MaterialManager, SAREE_CATALOG } from './engine/MaterialManager';
 import { PoseTracker } from './vision/PoseTracker';
@@ -10,6 +11,7 @@ import { VTONSettingsModal } from './components/VTONSettingsModal';
 import { UploadModal } from './components/UploadModal';
 import { LocalAIService } from './services/LocalAIService';
 import { ReplicateVTONService } from './services/ReplicateVTONService';
+import { GeminiStylistService, type GeminiBodyAnalysis } from './services/GeminiStylistService';
 
 const materialManagerInstance = new MaterialManager();
 
@@ -59,6 +61,7 @@ export function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [customPersonImage, setCustomPersonImage] = useState<string | null>(null);
+  const [geminiAdvice, setGeminiAdvice] = useState<GeminiBodyAnalysis | null>(null);
 
   // Local AI State (RTX 5060 Ti)
   const [isAiOnline, setIsAiOnline] = useState<boolean>(false);
@@ -268,6 +271,40 @@ export function App() {
     }
   };
 
+  // Process Uploaded Photo with Gemini 3D Body Measurement & Face Projection
+  const handleCustomPhotoSelected = async (dataUrl: string) => {
+    recordActivity();
+    setCustomPersonImage(dataUrl);
+
+    // 1. Project customer face from uploaded photo onto 3D Avatar
+    const img = new Image();
+    img.src = dataUrl;
+    img.onload = () => {
+      sareeCanvasRef.current?.projectFaceFromImage(img);
+    };
+
+    // 2. Call Gemini Vision API to analyze exact body measurements & skin undertones
+    try {
+      const analysis = await GeminiStylistService.analyzeBodyAndStyle(dataUrl);
+      if (analysis) {
+        setScales({
+          shoulderScale: analysis.shoulderScale,
+          waistHipScale: analysis.waistHipScale,
+          heightScale: analysis.heightScale
+        });
+        setGeminiAdvice(analysis);
+        if (analysis.bestSareePresetId) {
+          handleSelectPreset(analysis.bestSareePresetId);
+        }
+      }
+    } catch (e) {
+      console.warn('Gemini 3D measurement error:', e);
+    }
+
+    // 3. Switch to 3D Atelier mode so the user sees their 3D model!
+    setViewMode('3d-atelier');
+  };
+
   // Virtual Saree Try-On (Cloud Replicate IDM-VTON or Local RTX 5060 Ti)
   const handleAITryOn = async () => {
     recordActivity();
@@ -408,7 +445,49 @@ export function App() {
             scales={scales}
             poseId={poseId}
             isIdle={isIdle}
+            customPersonImage={customPersonImage}
           />
+        )}
+
+        {/* Gemini Stylist 3D Measurement Card */}
+        {geminiAdvice && viewMode === '3d-atelier' && (
+          <div className="absolute top-16 right-3 sm:right-6 z-30 max-w-[280px] sm:max-w-xs bg-neutral-900/95 border border-amber-500/40 backdrop-blur-md rounded-2xl p-3.5 text-white shadow-2xl animate-fade-in pointer-events-auto">
+            <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-2 mb-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-serif tracking-wider uppercase text-amber-300 font-semibold">Gemini 3D Tailor</span>
+              </div>
+              <button
+                onClick={() => setGeminiAdvice(null)}
+                className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex justify-between text-neutral-300">
+                <span className="text-neutral-400">Body Type:</span>
+                <span className="font-semibold text-amber-200">{geminiAdvice.bodyType}</span>
+              </div>
+              <div className="flex justify-between text-neutral-300">
+                <span className="text-neutral-400">Measurements:</span>
+                <span className="font-mono text-neutral-200">
+                  {geminiAdvice.estimatedHeightCm}cm H · {geminiAdvice.estimatedWaistCm}cm W
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-300">
+                <span className="text-neutral-400">Skin Undertone:</span>
+                <span className="text-amber-200">{geminiAdvice.skinUndertone}</span>
+              </div>
+              <div className="flex justify-between text-neutral-300">
+                <span className="text-neutral-400">Best Color:</span>
+                <span className="font-medium text-emerald-400">{geminiAdvice.bestSareeName}</span>
+              </div>
+              <p className="text-[10px] text-neutral-300 bg-neutral-950/70 p-2 rounded-xl border border-neutral-800 mt-1 leading-relaxed italic">
+                "{geminiAdvice.stylingAdvice}"
+              </p>
+            </div>
+          </div>
         )}
 
         {/* HUD & Kiosk Touch Controls */}
@@ -447,7 +526,7 @@ export function App() {
         <UploadModal
           isOpen={isUploadModalOpen}
           onClose={() => setIsUploadModalOpen(false)}
-          onSelectPhoto={(dataUrl) => setCustomPersonImage(dataUrl)}
+          onSelectPhoto={handleCustomPhotoSelected}
         />
 
         {/* AI VTON Settings Modal */}

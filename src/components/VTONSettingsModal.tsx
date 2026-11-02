@@ -1,6 +1,7 @@
 import { useState, type FC } from 'react';
-import { X, Key, ExternalLink, Sparkles, Cpu, Check, Shield } from 'lucide-react';
+import { X, Key, ExternalLink, Sparkles, Cpu, Check, Shield, Bot } from 'lucide-react';
 import { ReplicateVTONService } from '../services/ReplicateVTONService';
+import { GeminiStylistService } from '../services/GeminiStylistService';
 
 interface VTONSettingsModalProps {
   isOpen: boolean;
@@ -16,12 +17,14 @@ export const VTONSettingsModal: FC<VTONSettingsModalProps> = ({
   onSelectEngine
 }) => {
   const [token, setToken] = useState<string>(ReplicateVTONService.getStoredToken());
+  const [geminiKey, setGeminiKey] = useState<string>(GeminiStylistService.getStoredKey());
   const [isSaved, setIsSaved] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
   const handleSave = () => {
     ReplicateVTONService.setStoredToken(token);
+    GeminiStylistService.setStoredKey(geminiKey);
     setIsSaved(true);
     setTimeout(() => {
       setIsSaved(false);
@@ -132,6 +135,36 @@ export const VTONSettingsModal: FC<VTONSettingsModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Google Gemini API Key Section */}
+        <div className="flex flex-col gap-2 p-3 bg-neutral-950/80 rounded-xl border border-neutral-800">
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-neutral-300 font-medium flex items-center gap-1.5">
+              <Bot className="w-3.5 h-3.5 text-blue-400" />
+              Google Gemini API Key (3D Measurement & Stylist)
+            </label>
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-blue-400 hover:underline flex items-center gap-1"
+            >
+              Get Free Key <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+
+          <input
+            type="password"
+            placeholder="AIzaSy..."
+            value={geminiKey}
+            onChange={(e) => setGeminiKey(e.target.value)}
+            className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-blue-400"
+          />
+
+          <p className="text-[10px] text-neutral-400">
+            Used by Gemini 1.5 Flash to automatically measure body shoulders, waist, and height from your photo and morph the 3D model!
+          </p>
+        </div>
 
         {/* Save / Apply Button */}
         <div className="flex justify-end gap-2 mt-2">

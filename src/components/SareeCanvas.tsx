@@ -13,6 +13,7 @@ export interface SareeCanvasHandle {
   resetCamera: () => void;
   triggerAutoSpin: () => void;
   projectFace: (video: HTMLVideoElement, landmarks: LandmarkPoint[]) => void;
+  projectFaceFromImage: (img: HTMLImageElement | HTMLCanvasElement) => void;
   setPose: (poseId: AvatarPoseId) => void;
 }
 
@@ -22,10 +23,11 @@ interface SareeCanvasProps {
   scales: MorphScales;
   poseId: AvatarPoseId;
   isIdle?: boolean;
+  customPersonImage?: string | null;
 }
 
 export const SareeCanvas = forwardRef<SareeCanvasHandle, SareeCanvasProps>(
-  ({ materialManager, currentPresetId, scales, poseId, isIdle = false }, ref) => {
+  ({ materialManager, currentPresetId, scales, poseId, isIdle = false, customPersonImage = null }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -68,6 +70,12 @@ export const SareeCanvas = forwardRef<SareeCanvasHandle, SareeCanvasProps>(
       },
       projectFace: (video: HTMLVideoElement, landmarks: LandmarkPoint[]) => {
         const tex = FaceProjectionEngine.projectCustomerFace(video, landmarks);
+        if (rigRef.current) {
+          rigRef.current.updateFaceTexture(tex);
+        }
+      },
+      projectFaceFromImage: (img: HTMLImageElement | HTMLCanvasElement) => {
+        const tex = FaceProjectionEngine.projectFaceFromImage(img);
         if (rigRef.current) {
           rigRef.current.updateFaceTexture(tex);
         }
@@ -192,6 +200,15 @@ export const SareeCanvas = forwardRef<SareeCanvasHandle, SareeCanvasProps>(
           scene.add(rig.group);
           rig.updateMorphs(scales.shoulderScale, scales.waistHipScale, scales.heightScale);
           rig.setPose(poseId);
+
+          if (customPersonImage) {
+            const img = new Image();
+            img.src = customPersonImage;
+            img.onload = () => {
+              const tex = FaceProjectionEngine.projectFaceFromImage(img);
+              rig.updateFaceTexture(tex);
+            };
+          }
         }
       );
 
@@ -289,6 +306,17 @@ export const SareeCanvas = forwardRef<SareeCanvasHandle, SareeCanvasProps>(
         rigRef.current.sareeMesh.material = materialManager.getMaterial();
       }
     }, [currentPresetId, materialManager]);
+
+    // Project face texture whenever customPersonImage changes
+    useEffect(() => {
+      if (!customPersonImage || !rigRef.current) return;
+      const img = new Image();
+      img.src = customPersonImage;
+      img.onload = () => {
+        const tex = FaceProjectionEngine.projectFaceFromImage(img);
+        rigRef.current?.updateFaceTexture(tex);
+      };
+    }, [customPersonImage]);
 
     return (
       <div

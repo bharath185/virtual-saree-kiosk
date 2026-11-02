@@ -97,9 +97,9 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
 
   return (
     <div className="flex flex-col items-end gap-2 pointer-events-auto">
-      {/* PiP Window */}
+      {/* PiP Window (Compact on mobile, full size on desktop/kiosk) */}
       {isOpen && (
-        <div className="relative w-48 sm:w-56 h-72 sm:h-80 rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-neutral-950/90 backdrop-blur-md transition-all duration-300">
+        <div className="relative w-32 xs:w-40 sm:w-56 h-48 xs:h-56 sm:h-80 rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl border border-amber-500/40 bg-neutral-950/90 backdrop-blur-md transition-all duration-300">
           {/* Live Video */}
           <video
             ref={videoRef}
@@ -117,9 +117,9 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
           />
 
           {/* Status Badge overlay */}
-          <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+          <div className="absolute top-1.5 left-1.5 right-1.5 sm:top-2 sm:left-2 sm:right-2 flex items-center justify-between pointer-events-none">
             <div
-              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider flex items-center gap-1 backdrop-blur-md shadow-md ${
+              className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[8px] sm:text-[10px] font-semibold tracking-wider flex items-center gap-1 backdrop-blur-md shadow-md ${
                 calibrationState.status === 'calibrated'
                   ? 'bg-emerald-500/90 text-white'
                   : calibrationState.status === 'calibrating'
@@ -129,26 +129,27 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
             >
               {calibrationState.status === 'calibrated' ? (
                 <>
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>CALIBRATED</span>
+                  <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  <span className="hidden xs:inline">CALIBRATED</span>
+                  <span className="xs:hidden">OK</span>
                 </>
               ) : (
                 <>
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  <span>{isSimulated ? 'TEST POSE' : 'EDGE CV'}</span>
+                  <span>{isSimulated ? 'TEST' : 'AI'}</span>
                 </>
               )}
             </div>
 
             {/* Camera facing indicator pill */}
-            <div className="text-[10px] text-amber-200/90 font-mono bg-black/60 px-1.5 py-0.5 rounded border border-amber-500/30">
+            <div className="text-[8px] sm:text-[10px] text-amber-200/90 font-mono bg-black/60 px-1 sm:px-1.5 py-0.5 rounded border border-amber-500/30">
               {facingMode === 'user' ? 'FRONT' : 'BACK'}
             </div>
           </div>
 
           {/* Calibration Progress Bar */}
           {calibrationState.status === 'calibrating' && (
-            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-neutral-800">
+            <div className="absolute bottom-0 left-0 right-0 h-1 sm:h-1.5 bg-neutral-800">
               <div
                 className="h-full bg-gradient-to-r from-amber-400 to-yellow-300 transition-all duration-150"
                 style={{ width: `${calibrationState.progress}%` }}
@@ -157,24 +158,26 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
           )}
 
           {/* Bottom Info & Recalibrate / Camera Switch */}
-          <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] text-neutral-300">
-            <span className="truncate max-w-[100px] opacity-80">{calibrationState.message}</span>
+          <div className="absolute bottom-1 left-1.5 right-1.5 sm:bottom-1.5 sm:left-2 sm:right-2 flex items-center justify-between text-[9px] sm:text-[10px] text-neutral-300">
+            <span className="truncate max-w-[70px] sm:max-w-[100px] opacity-80 text-[8px] sm:text-[10px]">
+              {calibrationState.message}
+            </span>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 sm:gap-1">
               <button
                 onClick={onSwitchCamera}
                 title={`Switch Camera (Currently: ${facingMode === 'user' ? 'Front' : 'Back'})`}
-                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black text-amber-300 transition-colors"
+                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black text-amber-300 transition-colors cursor-pointer"
               >
-                <SwitchCamera className="w-3.5 h-3.5" />
+                <SwitchCamera className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
 
               <button
                 onClick={onRecalibrate}
                 title="Recalibrate Body Scale"
-                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black transition-colors"
+                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black transition-colors cursor-pointer"
               >
-                <RefreshCw className="w-3 h-3" />
+                <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
           </div>

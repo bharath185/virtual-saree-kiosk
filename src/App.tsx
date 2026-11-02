@@ -173,8 +173,8 @@ export function App() {
         className="hidden"
       />
 
-      {/* Portrait Kiosk Canvas Frame (Aspect ratio 9:16 locked or full screen) */}
-      <div className="relative w-full h-full max-w-[1080px] max-h-[1920px] aspect-[9/16] bg-neutral-950 shadow-2xl flex flex-col overflow-hidden">
+      {/* Portrait Kiosk Canvas Frame (Fluid 100dvh on mobile, 9:16 aspect ratio on tablet/desktop) */}
+      <div className="relative w-full h-[100dvh] max-w-full sm:max-w-[1080px] sm:max-h-[1920px] sm:aspect-[9/16] bg-neutral-950 shadow-2xl flex flex-col overflow-hidden">
         {/* 3D WebGL Viewport */}
         <SareeCanvas
           ref={sareeCanvasRef}

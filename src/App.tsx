@@ -31,6 +31,8 @@ export function App() {
   const [landmarks, setLandmarks] = useState<LandmarkPoint[]>([]);
   const [isSimulated, setIsSimulated] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
 
   // View Mode: 'ar-live' (Camera full-screen replacing saree on live people) vs '3d-atelier'
   const [viewMode, setViewMode] = useState<AppViewMode>('ar-live');
@@ -111,14 +113,21 @@ export function App() {
 
     tracker.onCameraChange = (mode) => {
       setFacingMode(mode);
+      setIsCameraActive(true);
+      setCameraError(null);
     };
 
-    tracker.onError = () => {
+    tracker.onError = (msg) => {
+      setCameraError(msg);
+      setIsCameraActive(false);
       setIsSimulated(true);
     };
 
     tracker.initialize(video).then((success) => {
-      if (!success) {
+      if (success) {
+        setIsCameraActive(true);
+        setCameraError(null);
+      } else {
         setIsSimulated(true);
       }
     });
@@ -190,6 +199,21 @@ export function App() {
     if (poseTrackerRef.current) {
       const newMode = await poseTrackerRef.current.switchCamera();
       setFacingMode(newMode);
+    }
+  };
+
+  // Explicit user-gesture trigger to grant/start camera
+  const handleStartCameraExplicitly = async () => {
+    recordActivity();
+    if (poseTrackerRef.current && videoRef.current) {
+      try {
+        setCameraError(null);
+        await poseTrackerRef.current.startCamera();
+        setIsCameraActive(true);
+        setIsSimulated(false);
+      } catch (err: any) {
+        setCameraError(err?.message || 'Camera permission denied or camera not found.');
+      }
     }
   };
 
@@ -283,16 +307,39 @@ export function App() {
       className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none font-sans"
       onPointerDown={recordActivity}
     >
-      {/* Hidden live video element for MediaPipe stream */}
+      {/* Live video element for camera stream (Must be in DOM and NOT display:none so browser decodes frames) */}
       <video
         ref={videoRef}
         playsInline
         muted
-        className="hidden"
+        autoPlay
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '1px',
+          height: '1px',
+          opacity: 0.001,
+          pointerEvents: 'none',
+          zIndex: -9999
+        }}
       />
 
       {/* Portrait Kiosk Frame (Fluid 100dvh on mobile, 9:16 aspect ratio on desktop/kiosk) */}
       <div className="relative w-full h-[100dvh] max-w-full sm:max-w-[1080px] sm:max-h-[1920px] sm:aspect-[9/16] bg-neutral-950 shadow-2xl flex flex-col overflow-hidden">
+        {/* Camera Permission Button if camera is not active or waiting for user interaction */}
+        {(!isCameraActive || cameraError) && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-2 px-3 rounded-full bg-neutral-900/95 border border-amber-400/60 backdrop-blur-md shadow-2xl animate-bounce">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            <span className="text-[11px] text-amber-300 font-medium">Camera access required</span>
+            <button
+              onClick={handleStartCameraExplicitly}
+              className="px-3 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs cursor-pointer shadow-md transition-all active:scale-95"
+            >
+              Start Camera
+            </button>
+          </div>
+        )}
         {/* Fullscreen Viewport: Live AR Smart Mirror (Default) OR 3D Atelier */}
         {viewMode === 'ar-live' ? (
           <ARLiveMirror

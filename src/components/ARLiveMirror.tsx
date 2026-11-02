@@ -59,7 +59,17 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
 
         ctx.clearRect(0, 0, w, h);
 
-        if (video && video.readyState >= 2) {
+        const hasLiveVideo = Boolean(
+          video &&
+          video.srcObject &&
+          (video.readyState >= 1 || video.videoWidth > 0)
+        );
+
+        if (video && video.srcObject && video.paused) {
+          video.play().catch(() => {});
+        }
+
+        if (hasLiveVideo && video) {
           // Draw full-screen live video feed (preserving aspect ratio)
           const vw = video.videoWidth || 640;
           const vh = video.videoHeight || 480;

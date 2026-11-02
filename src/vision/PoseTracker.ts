@@ -46,74 +46,103 @@ export class PoseTracker {
     this.videoElement = videoElement;
 
     try {
-      // 1. Setup camera stream
+      // 1. Setup camera stream directly
       await this.startCamera();
 
-      // 2. Setup MediaPipe Pose Landmarker
-      await this.initMediaPipe();
+      // 2. Setup MediaPipe Pose Landmarker safely in background
+      this.initMediaPipe().catch((e) => {
+        console.warn('MediaPipe initialization warning (using geometric tracking):', e);
+      });
 
       // 3. Start processing loop
       this.startDetectionLoop();
       return true;
     } catch (err: any) {
-      console.warn('PoseTracker camera/vision initialization warning, switching to simulation fallback:', err);
+      console.warn('PoseTracker camera access issue:', err);
       if (this.onError) {
-        this.onError(err?.message || 'Camera or MediaPipe unavailable. Enabled interactive simulation mode.');
+        this.onError(err?.message || 'Camera permission denied or camera unavailable.');
       }
       this.startSimulationMode();
       return false;
     }
   }
 
-  private async startCamera(): Promise<void> {
+  public async startCamera(): Promise<void> {
     if (!this.videoElement) return;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('Webcam API is not supported in this browser/device.');
+      throw new Error('Webcam API is not supported in this browser.');
     }
 
     this.stopCurrentStream();
 
-    try {
-      // Prefer portrait resolution and current facingMode ('user' or 'environment')
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const constraintsList: MediaStreamConstraints[] = [
+      {
         video: {
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-          facingMode: { ideal: this.facingMode }
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: this.facingMode ? { ideal: this.facingMode } : undefined
         },
         audio: false
-      });
-
-      this.currentStream = stream;
-      this.videoElement.srcObject = stream;
-      await new Promise<void>((resolve) => {
-        if (!this.videoElement) return resolve();
-        this.videoElement.onloadedmetadata = () => {
-          this.videoElement?.play().catch(() => {});
-          resolve();
-        };
-      });
-
-      // Enumerate cameras in background
-      this.fetchAvailableCameras().catch(() => {});
-    } catch (err) {
-      console.warn('Initial camera constraint failed, trying fallback:', err);
-      // Fallback with basic video constraints
-      const fallbackStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: this.facingMode },
+      },
+      {
+        video: {
+          facingMode: this.facingMode ? { ideal: this.facingMode } : undefined
+        },
         audio: false
-      });
-      this.currentStream = fallbackStream;
-      this.videoElement.srcObject = fallbackStream;
-      await new Promise<void>((resolve) => {
-        if (!this.videoElement) return resolve();
-        this.videoElement.onloadedmetadata = () => {
-          this.videoElement?.play().catch(() => {});
-          resolve();
-        };
-      });
+      },
+      {
+        video: true,
+        audio: false
+      }
+    ];
+
+    let stream: MediaStream | null = null;
+    let lastError: any = null;
+
+    for (const constraints of constraintsList) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (stream) break;
+      } catch (err) {
+        lastError = err;
+        console.warn('Camera constraint failed, trying fallback:', err);
+      }
     }
+
+    if (!stream) {
+      throw lastError || new Error('Could not access any camera devices.');
+    }
+
+    this.currentStream = stream;
+    this.videoElement.srcObject = stream;
+    this.videoElement.muted = true;
+
+    // Trigger video playback safely
+    await new Promise<void>((resolve) => {
+      const v = this.videoElement;
+      if (!v) return resolve();
+
+      let resolved = false;
+      const onReady = () => {
+        if (!resolved) {
+          resolved = true;
+          v.play().catch(() => {});
+          resolve();
+        }
+      };
+
+      if (v.readyState >= 1) {
+        onReady();
+      } else {
+        v.onloadedmetadata = onReady;
+        v.onloadeddata = onReady;
+        v.oncanplay = onReady;
+        setTimeout(onReady, 1500); // Fail-safe timeout
+      }
+    });
+
+    this.fetchAvailableCameras().catch(() => {});
 
     if (this.onCameraChange) {
       this.onCameraChange(this.facingMode);

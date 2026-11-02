@@ -131,7 +131,8 @@ export class FaceProjectionEngine {
    * Projects a static customer photo / selfie onto the 3D head texture
    */
   public static projectFaceFromImage(
-    img: HTMLImageElement | HTMLCanvasElement
+    img: HTMLImageElement | HTMLCanvasElement,
+    landmarks?: LandmarkPoint[]
   ): THREE.CanvasTexture {
     if (!this.canvas || !this.ctx || !this.texture) {
       this.initialize();
@@ -146,15 +147,29 @@ export class FaceProjectionEngine {
       const iw = (img as HTMLImageElement).naturalWidth || img.width || 512;
       const ih = (img as HTMLImageElement).naturalHeight || img.height || 512;
 
-      // Extract the face region (typically center-top 10% to 35% of a portrait photo)
-      const faceX = iw * 0.5;
-      const faceY = ih * 0.22;
-      const faceRadius = Math.min(iw, ih) * 0.22;
+      let faceX = iw * 0.5;
+      let faceY = ih * 0.22;
+      let faceRadius = Math.min(iw, ih) * 0.22;
+
+      if (landmarks && landmarks.length > 12) {
+        const nose = landmarks[0];
+        const leftShoulder = landmarks[11];
+        const rightShoulder = landmarks[12];
+        if (nose && leftShoulder && rightShoulder) {
+          faceX = nose.x * iw;
+          faceY = (nose.y - 0.02) * ih;
+          const shoulderDist = Math.hypot(
+            (leftShoulder.x - rightShoulder.x) * iw,
+            (leftShoulder.y - rightShoulder.y) * ih
+          );
+          faceRadius = Math.max(40, shoulderDist * 0.44);
+        }
+      }
 
       const sx = Math.max(0, faceX - faceRadius);
-      const sy = Math.max(0, faceY - faceRadius * 0.9);
+      const sy = Math.max(0, faceY - faceRadius * 1.1);
       const sw = Math.min(iw - sx, faceRadius * 2);
-      const sh = Math.min(ih - sy, faceRadius * 2.2);
+      const sh = Math.min(ih - sy, faceRadius * 2.3);
 
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = size;
@@ -167,6 +182,19 @@ export class FaceProjectionEngine {
       tCtx.clip();
       tCtx.drawImage(img, sx, sy, sw, sh, size * 0.12, size * 0.08, size * 0.76, size * 0.82);
       tCtx.restore();
+
+      // Soft feathering radial gradient blur mask
+      const gradient = ctx.createRadialGradient(
+        size / 2,
+        size * 0.48,
+        size * 0.25,
+        size / 2,
+        size * 0.48,
+        size * 0.42
+      );
+      gradient.addColorStop(0, 'rgba(0,0,0,1)');
+      gradient.addColorStop(0.85, 'rgba(0,0,0,0.85)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
 
       ctx.save();
       ctx.globalAlpha = 0.95;

@@ -1,5 +1,5 @@
 import { useState, useRef, type FC, type ChangeEvent } from 'react';
-import { X, Upload, Image as ImageIcon, UserCheck } from 'lucide-react';
+import { X, Upload, Image as ImageIcon, Sparkles } from 'lucide-react';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -121,10 +121,10 @@ export const UploadModal: FC<UploadModalProps> = ({
           <button
             onClick={handleConfirm}
             disabled={!previewUrl}
-            className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-neutral-950 font-bold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-neutral-950 font-bold text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
           >
-            <UserCheck className="w-4 h-4 text-neutral-950" />
-            Set as Try-On Subject
+            <Sparkles className="w-4 h-4 text-neutral-950 fill-neutral-950" />
+            Generate 3D Avatar with My Measurements
           </button>
         </div>
       </div>

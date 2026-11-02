@@ -62,6 +62,7 @@ export function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [customPersonImage, setCustomPersonImage] = useState<string | null>(null);
   const [geminiAdvice, setGeminiAdvice] = useState<GeminiBodyAnalysis | null>(null);
+  const [is3DGenerating, setIs3DGenerating] = useState<boolean>(false);
 
   // Local AI State (RTX 5060 Ti)
   const [isAiOnline, setIsAiOnline] = useState<boolean>(false);
@@ -271,9 +272,10 @@ export function App() {
     }
   };
 
-  // Process Uploaded Photo with Gemini 3D Body Measurement & Face Projection
+  // Process Uploaded Photo or Camera Frame with Gemini 3D Body Measurement & Face Projection
   const handleCustomPhotoSelected = async (dataUrl: string) => {
     recordActivity();
+    setIs3DGenerating(true);
     setCustomPersonImage(dataUrl);
 
     // 1. Project customer face from uploaded photo onto 3D Avatar
@@ -299,10 +301,37 @@ export function App() {
       }
     } catch (e) {
       console.warn('Gemini 3D measurement error:', e);
+    } finally {
+      setIs3DGenerating(false);
     }
 
     // 3. Switch to 3D Atelier mode so the user sees their 3D model!
     setViewMode('3d-atelier');
+  };
+
+  // Generate 3D Avatar directly from live camera feed
+  const handleGenerate3DFromCamera = () => {
+    recordActivity();
+    let frameUrl = '';
+    if (videoRef.current && videoRef.current.readyState >= 1) {
+      const v = videoRef.current;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = v.videoWidth || 720;
+      offscreen.height = v.videoHeight || 1280;
+      const octx = offscreen.getContext('2d');
+      if (octx) {
+        octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
+        frameUrl = offscreen.toDataURL('image/jpeg', 0.92);
+      }
+    } else if (arMirrorRef.current) {
+      frameUrl = arMirrorRef.current.captureScreenshot();
+    }
+
+    if (frameUrl) {
+      handleCustomPhotoSelected(frameUrl);
+    } else {
+      setViewMode('3d-atelier');
+    }
   };
 
   // Virtual Saree Try-On (Cloud Replicate IDM-VTON or Local RTX 5060 Ti)
@@ -520,7 +549,27 @@ export function App() {
           onToggleFreezeCamera={handleToggleFreezeCamera}
           viewMode={viewMode}
           onToggleViewMode={setViewMode}
+          onGenerate3DFromCamera={handleGenerate3DFromCamera}
         />
+
+        {/* Luxury Gemini 3D Generating HUD */}
+        {is3DGenerating && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md text-white p-6 animate-fadeIn pointer-events-auto">
+            <div className="relative mb-5">
+              <div className="w-16 h-16 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+              <Sparkles className="w-6 h-6 text-amber-400 absolute inset-0 m-auto animate-pulse" />
+            </div>
+            <h3 className="text-xl font-serif text-white tracking-wide mb-1.5 text-center">
+              Tailoring Your 3D Avatar
+            </h3>
+            <p className="text-xs text-amber-300 font-mono tracking-wider uppercase mb-2">
+              Gemini Vision 3D Tailoring
+            </p>
+            <p className="text-xs text-neutral-400 text-center max-w-xs leading-relaxed">
+              Analyzing exact shoulder, waist, and height proportions from your image and sculpting your bespoke 3D mannequin...
+            </p>
+          </div>
+        )}
 
         {/* Photo Upload Modal */}
         <UploadModal
@@ -545,6 +594,7 @@ export function App() {
           preset={currentPreset}
           scales={scales}
           isAiGenerated={isAiPhoto}
+          onGenerate3D={handleCustomPhotoSelected}
         />
       </div>
     </main>

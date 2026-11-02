@@ -11,6 +11,7 @@ interface PhotoModalProps {
   preset: SareePreset;
   scales: MorphScales;
   isAiGenerated?: boolean;
+  onGenerate3D?: (photoUrl: string) => void;
 }
 
 export const PhotoModal: FC<PhotoModalProps> = ({
@@ -19,7 +20,8 @@ export const PhotoModal: FC<PhotoModalProps> = ({
   photoUrl,
   preset,
   scales,
-  isAiGenerated = false
+  isAiGenerated = false,
+  onGenerate3D
 }) => {
   useEffect(() => {
     if (isOpen) {
@@ -136,7 +138,20 @@ export const PhotoModal: FC<PhotoModalProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="p-3 sm:p-4 bg-neutral-900 border-t border-neutral-800/80 flex items-center gap-2 sm:gap-3">
+        <div className="p-3 sm:p-4 bg-neutral-900 border-t border-neutral-800/80 flex flex-wrap items-center gap-2 sm:gap-3">
+          {onGenerate3D && (
+            <button
+              onClick={() => {
+                onClose();
+                onGenerate3D(photoUrl);
+              }}
+              className="w-full py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-400/20 transition-all cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neutral-950 fill-neutral-950" />
+              <span>✨ Create 3D Avatar From This Photo</span>
+            </button>
+          )}
+
           <button
             onClick={downloadPhoto}
             className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
@@ -147,7 +162,7 @@ export const PhotoModal: FC<PhotoModalProps> = ({
 
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-semibold text-xs flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+            className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer"
           >
             <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Done</span>

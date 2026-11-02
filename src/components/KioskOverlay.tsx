@@ -34,6 +34,7 @@ interface KioskOverlayProps {
   onToggleFreezeCamera: () => void;
   viewMode: AppViewMode;
   onToggleViewMode: (mode: AppViewMode) => void;
+  onGenerate3DFromCamera?: () => void;
 }
 
 export const KioskOverlay: FC<KioskOverlayProps> = ({
@@ -64,7 +65,8 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
   isCameraFrozen,
   onToggleFreezeCamera,
   viewMode,
-  onToggleViewMode
+  onToggleViewMode,
+  onGenerate3DFromCamera
 }) => {
   const carouselRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -306,6 +308,18 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
               <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 stroke-[2]" />
               <span className="hidden xs:inline">Snap</span>
             </button>
+
+            {/* Generate 3D Avatar with Face & Body */}
+            {viewMode === 'ar-live' && onGenerate3DFromCamera && (
+              <button
+                onClick={onGenerate3DFromCamera}
+                title="Create 3D Avatar with your face & body using Gemini Vision"
+                className="py-2.5 px-3 sm:py-3.5 sm:px-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-400/80 hover:bg-amber-400/30 text-amber-300 hover:text-white font-semibold text-xs sm:text-sm tracking-wide flex items-center gap-1.5 sm:gap-2 shadow-lg transition-all transform active:scale-95 cursor-pointer shrink-0"
+              >
+                <Box className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 stroke-[2]" />
+                <span className="hidden xs:inline">3D Avatar</span>
+              </button>
+            )}
           </div>
         </div>
 

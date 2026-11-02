@@ -19,6 +19,13 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const animFrameId = useRef<number | null>(null);
     const frozenFrameRef = useRef<HTMLCanvasElement | null>(null);
+    const demoRefImg = useRef<HTMLImageElement | null>(null);
+
+    useEffect(() => {
+      const img = new Image();
+      img.src = '/sarees/teal_zardozi_reference.jpg';
+      demoRefImg.current = img;
+    }, []);
 
     useImperativeHandle(ref, () => ({
       captureScreenshot: () => {
@@ -88,20 +95,28 @@ export const ARLiveMirror = forwardRef<ARLiveMirrorHandle, ARLiveMirrorProps>(
             fCtx.drawImage(canvas, 0, 0);
           }
         } else {
-          // Stylish luxury boutique salon background if camera is loading/simulating
-          const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-          bgGrad.addColorStop(0, '#0F1018');
-          bgGrad.addColorStop(0.5, '#171822');
-          bgGrad.addColorStop(1, '#09090E');
-          ctx.fillStyle = bgGrad;
-          ctx.fillRect(0, 0, w, h);
-
-          // Subtle soft studio light beam
-          const lightGrad = ctx.createRadialGradient(w / 2, h * 0.35, 20, w / 2, h * 0.35, w * 0.8);
-          lightGrad.addColorStop(0, 'rgba(212, 175, 55, 0.12)');
-          lightGrad.addColorStop(0.8, 'rgba(0,0,0,0)');
-          ctx.fillStyle = lightGrad;
-          ctx.fillRect(0, 0, w, h);
+          // If webcam is not ready, draw the high-fashion studio reference model from your photo
+          if (demoRefImg.current && demoRefImg.current.complete) {
+            const img = demoRefImg.current;
+            const imgAspect = img.width / img.height;
+            const canvasAspect = w / h;
+            let sx = 0, sy = 0, sw = img.width, sh = img.height;
+            if (imgAspect > canvasAspect) {
+              sw = img.height * canvasAspect;
+              sx = (img.width - sw) / 2;
+            } else {
+              sh = img.width / canvasAspect;
+              sy = (img.height - sh) / 2;
+            }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+          } else {
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+            bgGrad.addColorStop(0, '#0F1018');
+            bgGrad.addColorStop(0.5, '#171822');
+            bgGrad.addColorStop(1, '#09090E');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, w, h);
+          }
         }
 
         // 2. Render Draped Saree directly on top of the live customer's body!

@@ -472,16 +472,17 @@ export class PoseTracker {
             heightScale: simHeight
           };
 
-      // Mock landmarks matching portrait viewport
-      const mockLandmarks: LandmarkPoint[] = [
-        { x: 0.5, y: 0.22, z: 0 }, // Nose
-        { x: 0.38, y: 0.32, z: 0 }, // Left Shoulder
-        { x: 0.62, y: 0.32, z: 0 }, // Right Shoulder
-        { x: 0.42, y: 0.56, z: 0 }, // Left Hip
-        { x: 0.58, y: 0.56, z: 0 }, // Right Hip
-        { x: 0.43, y: 0.88, z: 0 }, // Left Ankle
-        { x: 0.57, y: 0.88, z: 0 }  // Right Ankle
-      ];
+      // Mock landmarks matching realistic human pose keypoints
+      const mockLandmarks: LandmarkPoint[] = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+      mockLandmarks[0] = { x: 0.46, y: 0.14, z: 0, visibility: 0.95 }; // Nose
+      mockLandmarks[11] = { x: 0.38, y: 0.26, z: 0, visibility: 0.95 }; // Left Shoulder
+      mockLandmarks[12] = { x: 0.56, y: 0.25, z: 0, visibility: 0.95 }; // Right Shoulder
+      mockLandmarks[23] = { x: 0.39, y: 0.55, z: 0, visibility: 0.9 }; // Left Hip
+      mockLandmarks[24] = { x: 0.54, y: 0.55, z: 0, visibility: 0.9 }; // Right Hip
+      mockLandmarks[25] = { x: 0.40, y: 0.75, z: 0, visibility: 0.85 }; // Left Knee
+      mockLandmarks[26] = { x: 0.52, y: 0.75, z: 0, visibility: 0.85 }; // Right Knee
+      mockLandmarks[27] = { x: 0.41, y: 0.94, z: 0, visibility: 0.85 }; // Left Ankle
+      mockLandmarks[28] = { x: 0.50, y: 0.94, z: 0, visibility: 0.85 }; // Right Ankle
 
       if (this.onPoseUpdate) {
         this.onPoseUpdate({

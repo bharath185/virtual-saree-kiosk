@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: virtual-saree-kiosk
+    runtime: static
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Access-Control-Allow-Origin
+        value: "*"

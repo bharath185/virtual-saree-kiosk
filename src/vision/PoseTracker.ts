@@ -1,12 +1,17 @@
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
-import type { BodyMeasurements, CalibrationState, LandmarkPoint, MorphScales } from '../types';
+import type { BodyMeasurements, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales } from '../types';
 
 export class PoseTracker {
   private videoElement: HTMLVideoElement | null = null;
+  private currentStream: MediaStream | null = null;
   private poseLandmarker: PoseLandmarker | null = null;
   private animFrameId: number | null = null;
   private isRunning: boolean = false;
   private isDestroyed: boolean = false;
+
+  // Camera Facing Mode ('user' for front, 'environment' for back)
+  public facingMode: CameraFacingMode = 'user';
+  public availableDevices: MediaDeviceInfo[] = [];
 
   // Smoothing filters (EMA alpha = 0.15)
   private readonly ALPHA: number = 0.15;
@@ -31,6 +36,7 @@ export class PoseTracker {
   }) => void;
 
   public onCalibrationChange?: (state: CalibrationState) => void;
+  public onCameraChange?: (mode: CameraFacingMode) => void;
   public onError?: (error: string) => void;
 
   constructor() {}
@@ -65,39 +71,90 @@ export class PoseTracker {
       throw new Error('Webcam API is not supported in this browser/device.');
     }
 
+    this.stopCurrentStream();
+
     try {
-      // Prefer portrait resolution or high-res webcam
+      // Prefer portrait resolution and current facingMode ('user' or 'environment')
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1080 },
           height: { ideal: 1920 },
-          facingMode: 'user'
+          facingMode: { ideal: this.facingMode }
         },
         audio: false
       });
 
+      this.currentStream = stream;
       this.videoElement.srcObject = stream;
       await new Promise<void>((resolve) => {
         if (!this.videoElement) return resolve();
         this.videoElement.onloadedmetadata = () => {
-          this.videoElement?.play();
+          this.videoElement?.play().catch(() => {});
           resolve();
         };
       });
+
+      // Enumerate cameras in background
+      this.fetchAvailableCameras().catch(() => {});
     } catch (err) {
-      // Fallback with generic video constraints
+      console.warn('Initial camera constraint failed, trying fallback:', err);
+      // Fallback with basic video constraints
       const fallbackStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: { facingMode: this.facingMode },
         audio: false
       });
+      this.currentStream = fallbackStream;
       this.videoElement.srcObject = fallbackStream;
       await new Promise<void>((resolve) => {
         if (!this.videoElement) return resolve();
         this.videoElement.onloadedmetadata = () => {
-          this.videoElement?.play();
+          this.videoElement?.play().catch(() => {});
           resolve();
         };
       });
+    }
+
+    if (this.onCameraChange) {
+      this.onCameraChange(this.facingMode);
+    }
+  }
+
+  public async switchCamera(targetMode?: CameraFacingMode): Promise<CameraFacingMode> {
+    const nextMode: CameraFacingMode = targetMode || (this.facingMode === 'user' ? 'environment' : 'user');
+    this.facingMode = nextMode;
+
+    try {
+      await this.startCamera();
+      // Reset calibration cleanly for new angle
+      this.resetCalibration();
+    } catch (err: any) {
+      console.error('Failed to switch camera:', err);
+      if (this.onError) {
+        this.onError(`Could not switch to ${nextMode} camera: ${err?.message || ''}`);
+      }
+    }
+
+    return this.facingMode;
+  }
+
+  private async fetchAvailableCameras(): Promise<void> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      this.availableDevices = devices.filter((d) => d.kind === 'videoinput');
+    } catch {
+      this.availableDevices = [];
+    }
+  }
+
+  private stopCurrentStream(): void {
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach((track) => track.stop());
+      this.currentStream = null;
+    }
+    if (this.videoElement && this.videoElement.srcObject) {
+      const stream = this.videoElement.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      this.videoElement.srcObject = null;
     }
   }
 
@@ -446,11 +503,7 @@ export class PoseTracker {
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
     }
-    if (this.videoElement && this.videoElement.srcObject) {
-      const stream = this.videoElement.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      this.videoElement.srcObject = null;
-    }
+    this.stopCurrentStream();
     if (this.poseLandmarker) {
       this.poseLandmarker.close();
       this.poseLandmarker = null;

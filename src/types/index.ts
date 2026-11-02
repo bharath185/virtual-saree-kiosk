@@ -44,3 +44,6 @@ export interface LandmarkPoint {
   z: number;
   visibility?: number;
 }
+
+export type CameraFacingMode = 'user' | 'environment';
+

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FC, type RefObject } from 'react';
-import { CheckCircle2, RefreshCw, Eye, EyeOff, Sliders } from 'lucide-react';
-import type { CalibrationState, LandmarkPoint, MorphScales } from '../types';
+import { CheckCircle2, RefreshCw, Eye, EyeOff, Sliders, SwitchCamera } from 'lucide-react';
+import type { CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales } from '../types';
 
 interface WebcamPiPProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -10,6 +10,8 @@ interface WebcamPiPProps {
   scales: MorphScales;
   onManualScaleChange?: (scales: MorphScales) => void;
   isSimulated?: boolean;
+  facingMode: CameraFacingMode;
+  onSwitchCamera: () => void;
 }
 
 export const WebcamPiP: FC<WebcamPiPProps> = ({
@@ -19,7 +21,9 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
   onRecalibrate,
   scales,
   onManualScaleChange,
-  isSimulated = false
+  isSimulated = false,
+  facingMode,
+  onSwitchCamera
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(true);
@@ -88,6 +92,9 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
     });
   }, [landmarks, isOpen, calibrationState]);
 
+  // Mirror feed only for front (selfie) camera, normal for back camera
+  const mirrorClass = facingMode === 'user' ? '-scale-x-100' : 'scale-x-100';
+
   return (
     <div className="flex flex-col items-end gap-2 pointer-events-auto">
       {/* PiP Window */}
@@ -98,7 +105,7 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
             ref={videoRef}
             playsInline
             muted
-            className="w-full h-full object-cover transform -scale-x-100"
+            className={`w-full h-full object-cover transform transition-transform duration-300 ${mirrorClass}`}
           />
 
           {/* Skeleton Canvas Overlay */}
@@ -106,7 +113,7 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
             ref={canvasRef}
             width={240}
             height={320}
-            className="absolute inset-0 w-full h-full object-cover transform -scale-x-100 pointer-events-none"
+            className={`absolute inset-0 w-full h-full object-cover transform pointer-events-none transition-transform duration-300 ${mirrorClass}`}
           />
 
           {/* Status Badge overlay */}
@@ -133,10 +140,9 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
               )}
             </div>
 
-            <div className="text-[10px] text-amber-200/80 font-mono bg-black/60 px-1.5 py-0.5 rounded">
-              {calibrationState.status === 'calibrating'
-                ? `${calibrationState.progress}%`
-                : `${(scales.shoulderScale * 100).toFixed(0)}% W`}
+            {/* Camera facing indicator pill */}
+            <div className="text-[10px] text-amber-200/90 font-mono bg-black/60 px-1.5 py-0.5 rounded border border-amber-500/30">
+              {facingMode === 'user' ? 'FRONT' : 'BACK'}
             </div>
           </div>
 
@@ -150,21 +156,32 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
             </div>
           )}
 
-          {/* Bottom Info & Recalibrate */}
+          {/* Bottom Info & Recalibrate / Camera Switch */}
           <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] text-neutral-300">
-            <span className="truncate max-w-[130px] opacity-80">{calibrationState.message}</span>
-            <button
-              onClick={onRecalibrate}
-              title="Recalibrate Body Scale"
-              className="p-1 rounded-full bg-black/60 hover:bg-amber-500/80 hover:text-black transition-colors"
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
+            <span className="truncate max-w-[100px] opacity-80">{calibrationState.message}</span>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onSwitchCamera}
+                title={`Switch Camera (Currently: ${facingMode === 'user' ? 'Front' : 'Back'})`}
+                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black text-amber-300 transition-colors"
+              >
+                <SwitchCamera className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={onRecalibrate}
+                title="Recalibrate Body Scale"
+                className="p-1 rounded-full bg-black/70 hover:bg-amber-500 hover:text-black transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Manual Sliders Drawer (for edge-testing or manual fine-tuning) */}
+      {/* Manual Sliders Drawer */}
       {showSliders && isOpen && onManualScaleChange && (
         <div className="w-56 p-3 bg-neutral-950/95 border border-amber-500/30 rounded-2xl shadow-xl backdrop-blur-md text-xs space-y-2">
           <div className="flex justify-between items-center text-amber-300 font-medium pb-1 border-b border-neutral-800">
@@ -239,6 +256,16 @@ export const WebcamPiP: FC<WebcamPiPProps> = ({
 
       {/* Control Pills */}
       <div className="flex items-center gap-1.5 bg-neutral-900/80 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-neutral-800 shadow-lg">
+        {/* Quick Camera Switch Button */}
+        <button
+          onClick={onSwitchCamera}
+          title={`Switch Camera (Currently: ${facingMode === 'user' ? 'Front' : 'Back'})`}
+          className="p-1.5 rounded-full text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition-colors flex items-center gap-1"
+        >
+          <SwitchCamera className="w-4 h-4" />
+          <span className="text-[10px] font-mono font-medium">{facingMode === 'user' ? 'Front' : 'Back'}</span>
+        </button>
+
         <button
           onClick={() => setShowSliders(!showSliders)}
           title="Toggle Manual Proportions"

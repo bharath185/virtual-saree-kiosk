@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { CalibrationState, LandmarkPoint, MorphScales, SareePreset } from './types';
+import type { CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
 import { MaterialManager, SAREE_CATALOG } from './engine/MaterialManager';
 import { PoseTracker } from './vision/PoseTracker';
 import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
@@ -28,6 +28,7 @@ export function App() {
 
   const [landmarks, setLandmarks] = useState<LandmarkPoint[]>([]);
   const [isSimulated, setIsSimulated] = useState<boolean>(false);
+  const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
 
   // Idle timer (60 seconds)
   const [idleTimeRemaining, setIdleTimeRemaining] = useState<number>(60);
@@ -65,6 +66,10 @@ export function App() {
       if (calib.lockedScales) {
         setScales(calib.lockedScales);
       }
+    };
+
+    tracker.onCameraChange = (mode) => {
+      setFacingMode(mode);
     };
 
     tracker.onError = () => {
@@ -136,6 +141,15 @@ export function App() {
     poseTrackerRef.current?.setManualScales(newScales);
   };
 
+  // Switch between front and back camera
+  const handleSwitchCamera = async () => {
+    recordActivity();
+    if (poseTrackerRef.current) {
+      const newMode = await poseTrackerRef.current.switchCamera();
+      setFacingMode(newMode);
+    }
+  };
+
   // Screen capture & QR photo generation
   const handleSnapPhoto = () => {
     recordActivity();
@@ -184,6 +198,8 @@ export function App() {
           isSimulated={isSimulated}
           switchTimeMs={switchTimeMs}
           idleTimeRemaining={idleTimeRemaining}
+          facingMode={facingMode}
+          onSwitchCamera={handleSwitchCamera}
         />
 
         {/* Photo Look Capture & QR Code Modal */}

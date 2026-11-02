@@ -1,6 +1,6 @@
 import { useRef, useState, type FC, type RefObject } from 'react';
 import { Camera, Maximize2, Minimize2, MoveHorizontal, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
-import type { CalibrationState, MorphScales, SareePreset } from '../types';
+import type { CalibrationState, CameraFacingMode, MorphScales, SareePreset } from '../types';
 import { SAREE_CATALOG } from '../engine/MaterialManager';
 import { WebcamPiP } from './WebcamPiP';
 
@@ -17,6 +17,8 @@ interface KioskOverlayProps {
   isSimulated?: boolean;
   switchTimeMs?: number;
   idleTimeRemaining?: number;
+  facingMode: CameraFacingMode;
+  onSwitchCamera: () => void;
 }
 
 export const KioskOverlay: FC<KioskOverlayProps> = ({
@@ -31,7 +33,9 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
   onManualScaleChange,
   isSimulated = false,
   switchTimeMs = 12,
-  idleTimeRemaining = 60
+  idleTimeRemaining = 60,
+  facingMode,
+  onSwitchCamera
 }) => {
   const carouselRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -100,6 +104,8 @@ export const KioskOverlay: FC<KioskOverlayProps> = ({
             scales={scales}
             onManualScaleChange={onManualScaleChange}
             isSimulated={isSimulated}
+            facingMode={facingMode}
+            onSwitchCamera={onSwitchCamera}
           />
         </div>
       </header>

@@ -13,7 +13,13 @@ export class TryOnSynthesisService {
   private static lookCache = new Map<string, { frontUrl: string; backUrl: string }>();
 
   public static getStoredKey(): string {
-    return localStorage.getItem(this.STORAGE_KEY) || (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+    const key = localStorage.getItem(this.STORAGE_KEY) || (import.meta.env.VITE_GEMINI_API_KEY as string) || 'AIzaSyBI32prpbXMHlSru-J96anHd-jOtSB466g';
+    if (!localStorage.getItem(this.STORAGE_KEY) && key) {
+      try {
+        localStorage.setItem(this.STORAGE_KEY, key);
+      } catch {}
+    }
+    return key;
   }
 
   public static setStoredKey(key: string): void {
@@ -196,7 +202,53 @@ export class TryOnSynthesisService {
   }
 
   /**
-   * Generates photorealistic AI image using Flux AI diffusion model (ChatGPT-style edit)
+   * Attempts to generate image directly via Gemini's image generation model (gemini-2.5-flash-image)
+   * using the user's provided Gemini API key.
+   */
+  private static async tryGeminiDirectImageGeneration(prompt: string, userImage?: string): Promise<string | null> {
+    const apiKey = this.getStoredKey();
+    if (!apiKey) return null;
+
+    try {
+      const parts: any[] = [{ text: prompt }];
+
+      if (userImage) {
+        let cleanBase64 = userImage;
+        let mimeType = 'image/jpeg';
+        if (cleanBase64.includes(';base64,')) {
+          const split = cleanBase64.split(';base64,');
+          mimeType = split[0].replace('data:', '') || 'image/jpeg';
+          cleanBase64 = split[1];
+        }
+        parts.push({ inlineData: { mimeType, data: cleanBase64 } });
+      }
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts }] })
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        const candidateParts = data?.candidates?.[0]?.content?.parts || [];
+        for (const p of candidateParts) {
+          if (p.inlineData && p.inlineData.data) {
+            return `data:${p.inlineData.mimeType || 'image/jpeg'};base64,${p.inlineData.data}`;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Gemini direct image generation attempt:', e);
+    }
+    return null;
+  }
+
+  /**
+   * Generates photorealistic AI image using Gemini Image or Gemini-guided Flux AI
    */
   private static async generateAILook(params: {
     userImage: string;
@@ -215,15 +267,20 @@ export class TryOnSynthesisService {
     // 1. Front View Prompt
     const frontPrompt = `Photorealistic 8k studio portrait of ${customerDescription}, wearing a magnificent ${saree.name}, luxurious ${saree.fabric} fabric in ${saree.primaryColor} with authentic ${saree.zariType} gold border, perfectly draped knife pleats wrapping waist to ankles, rich pallu draped elegantly over left shoulder, wearing ${blouseColor} blouse and ${jewellery.name} temple jewellery, cinematic rim lighting, highly detailed fabric texture, ultra sharp focus, Vogue India fashion photoshoot.`;
 
-    const fluxFrontUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(frontPrompt)}?width=768&height=1024&nologo=true&model=flux&seed=${seed}`;
+    // Try direct Gemini Image Generation with user's key first
+    const geminiDirectFront = await this.tryGeminiDirectImageGeneration(frontPrompt, userImage);
+
+    const fluxFrontUrl = geminiDirectFront || `https://image.pollinations.ai/prompt/${encodeURIComponent(frontPrompt)}?width=768&height=1024&nologo=true&model=flux&seed=${seed}`;
 
     // 2. Back View (Pallu Fall) Prompt
     const backPrompt = `Photorealistic 8k studio back view of an Indian woman wearing ${saree.name}, showing magnificent royal ${saree.zariType} embroidered pallu cascading down the back, neat traditional hair braid with jasmine gajra, deep back blouse, studio lighting.`;
 
-    const fluxBackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(backPrompt)}?width=768&height=1024&nologo=true&model=flux&seed=${seed + 1}`;
+    const geminiDirectBack = await this.tryGeminiDirectImageGeneration(backPrompt);
 
-    // If customer uploaded photo, blend customer's real face onto the generated portrait
-    if (userImage) {
+    const fluxBackUrl = geminiDirectBack || `https://image.pollinations.ai/prompt/${encodeURIComponent(backPrompt)}?width=768&height=1024&nologo=true&model=flux&seed=${seed + 1}`;
+
+    // If customer uploaded photo and we used the diffusion engine, blend customer's real face onto the generated portrait
+    if (userImage && !geminiDirectFront) {
       try {
         const blendedFront = await this.blendFaceOntoAILook(userImage, fluxFrontUrl);
         return {

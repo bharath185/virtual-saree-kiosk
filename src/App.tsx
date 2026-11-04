@@ -1,602 +1,278 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { Sparkles, X } from 'lucide-react';
-import type { AppViewMode, AvatarPoseId, CalibrationState, CameraFacingMode, LandmarkPoint, MorphScales, SareePreset } from './types';
-import { MaterialManager, SAREE_CATALOG } from './engine/MaterialManager';
-import { PoseTracker } from './vision/PoseTracker';
-import { SareeCanvas, type SareeCanvasHandle } from './components/SareeCanvas';
-import { ARLiveMirror, type ARLiveMirrorHandle } from './components/ARLiveMirror';
-import { KioskOverlay } from './components/KioskOverlay';
-import { PhotoModal } from './components/PhotoModal';
-import { VTONSettingsModal } from './components/VTONSettingsModal';
-import { UploadModal } from './components/UploadModal';
-import { LocalAIService } from './services/LocalAIService';
-import { ReplicateVTONService } from './services/ReplicateVTONService';
-import { GeminiStylistService, type GeminiBodyAnalysis } from './services/GeminiStylistService';
-
-const materialManagerInstance = new MaterialManager();
+import { useState, useEffect, useCallback } from 'react';
+import type {
+  SareeGarment,
+  DrapingStyle,
+  BlouseConfig,
+  JewellerySet,
+  OccasionScene,
+  TryOnResult
+} from './types/portal';
+import {
+  SAREE_PORTAL_CATALOG,
+  DRAPING_STYLES,
+  JEWELLERY_SETS,
+  OCCASION_SCENES,
+  SAMPLE_USER_MODELS
+} from './data/portalCatalog';
+import { TryOnSynthesisService } from './services/TryOnSynthesisService';
+import { PortalHeader } from './components/portal/PortalHeader';
+import { TryOnStage } from './components/portal/TryOnStage';
+import { CoutureDrawer } from './components/portal/CoutureDrawer';
+import { UploadModal } from './components/portal/UploadModal';
+import { SettingsModal } from './components/portal/SettingsModal';
 
 export function App() {
-  const [currentPreset, setCurrentPreset] = useState<SareePreset>(SAREE_CATALOG[0]);
-  const [switchTimeMs, setSwitchTimeMs] = useState<number>(8.5);
+  // 1. Core Couture Selection States
+  const [selectedSaree, setSelectedSaree] = useState<SareeGarment>(SAREE_PORTAL_CATALOG[0]);
+  const [selectedStyle, setSelectedStyle] = useState<DrapingStyle>(DRAPING_STYLES[0]);
+  const [blouseConfig, setBlouseConfig] = useState<BlouseConfig>({
+    color: 'inherit',
+    colorName: 'Matching Saree',
+    sleeveStyle: 'elbow',
+    isContrast: false
+  });
+  const [selectedJewellery, setSelectedJewellery] = useState<JewellerySet>(JEWELLERY_SETS[0]);
+  const [selectedScene, setSelectedScene] = useState<OccasionScene>(OCCASION_SCENES[0]);
 
-  const [scales, setScales] = useState<MorphScales>({
-    shoulderScale: 1.0,
-    waistHipScale: 1.0,
-    heightScale: 1.0
+  // 2. User Photo State (Sample 01 office casual default)
+  const [userPhoto, setUserPhoto] = useState<string>(SAMPLE_USER_MODELS[0].photoUrl);
+  const [isCustomPhoto, setIsCustomPhoto] = useState<boolean>(false);
+
+  // 3. Generated Look State
+  const [currentLook, setCurrentLook] = useState<TryOnResult>({
+    lookId: 'DRAPE-INIT',
+    frontUrl: `/sarees/looks/look_${SAREE_PORTAL_CATALOG[0].id}.jpg`,
+    backUrl: `/sarees/looks/look_${SAREE_PORTAL_CATALOG[0].id}_back.jpg`,
+    originalUserPhoto: SAMPLE_USER_MODELS[0].photoUrl,
+    saree: SAREE_PORTAL_CATALOG[0],
+    drapingStyle: DRAPING_STYLES[0],
+    blouse: {
+      color: 'inherit',
+      colorName: 'Matching Saree',
+      sleeveStyle: 'elbow',
+      isContrast: false
+    },
+    jewellery: JEWELLERY_SETS[0],
+    scene: OCCASION_SCENES[0],
+    generatedAt: new Date().toISOString(),
+    isAiGenerated: false
   });
 
-  const [calibrationState, setCalibrationState] = useState<CalibrationState>({
-    status: 'searching',
-    progress: 0,
-    message: 'Starting camera...',
-    isInsideGuide: false,
-    lockedScales: null
-  });
+  const [isAiGenerating, setIsAiGenerating] = useState<boolean>(false);
+  const [wishlist, setWishlist] = useState<TryOnResult[]>([]);
 
-  const [landmarks, setLandmarks] = useState<LandmarkPoint[]>([]);
-  const [isSimulated, setIsSimulated] = useState<boolean>(false);
-  const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  // 4. Modal Visibility
+  const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [storeToast, setStoreToast] = useState<string | null>(null);
 
-  // View Mode: 'ar-live' (Camera full-screen replacing saree on live people) vs '3d-atelier'
-  const [viewMode, setViewMode] = useState<AppViewMode>('ar-live');
+  // 5. Synthesize Look whenever user changes selections
+  const updateLook = useCallback(async (overrides?: {
+    saree?: SareeGarment;
+    style?: DrapingStyle;
+    blouse?: BlouseConfig;
+    jewellery?: JewellerySet;
+    scene?: OccasionScene;
+    photo?: string;
+    customPhoto?: boolean;
+  }) => {
+    const targetSaree = overrides?.saree || selectedSaree;
+    const targetStyle = overrides?.style || selectedStyle;
+    const targetBlouse = overrides?.blouse || blouseConfig;
+    const targetJewellery = overrides?.jewellery || selectedJewellery;
+    const targetScene = overrides?.scene || selectedScene;
+    const targetPhoto = overrides?.photo !== undefined ? overrides.photo : userPhoto;
+    const targetIsCustom = overrides?.customPhoto !== undefined ? overrides.customPhoto : isCustomPhoto;
 
-  // Pose Stills & Camera Freeze Mode
-  const [poseId, setPoseId] = useState<AvatarPoseId>('front');
-  const [isCameraFrozen, setIsCameraFrozen] = useState<boolean>(false);
-
-  // Idle timer (60 seconds)
-  const [idleTimeRemaining, setIdleTimeRemaining] = useState<number>(60);
-  const [isIdle, setIsIdle] = useState<boolean>(false);
-
-  // Photo Snap Modal
-  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState<boolean>(false);
-  const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string>('');
-
-  // AI Engine State: 'replicate' (Cloud IDM-VTON) vs 'local' (RTX 5060 Ti)
-  const [selectedEngine, setSelectedEngine] = useState<'replicate' | 'local'>(
-    ReplicateVTONService.getStoredToken() ? 'replicate' : 'local'
-  );
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
-  const [customPersonImage, setCustomPersonImage] = useState<string | null>(null);
-  const [geminiAdvice, setGeminiAdvice] = useState<GeminiBodyAnalysis | null>(null);
-  const [is3DGenerating, setIs3DGenerating] = useState<boolean>(false);
-
-  // Local AI State (RTX 5060 Ti)
-  const [isAiOnline, setIsAiOnline] = useState<boolean>(false);
-  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
-  const [isAiPhoto, setIsAiPhoto] = useState<boolean>(false);
-
-  // Monitor Local AI Python Service Health
-  useEffect(() => {
-    const check = async () => {
-      const online = await LocalAIService.checkHealth();
-      setIsAiOnline(online);
-    };
-    check();
-    const interval = setInterval(check, 4000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const poseTrackerRef = useRef<PoseTracker | null>(null);
-  const sareeCanvasRef = useRef<SareeCanvasHandle | null>(null);
-  const arMirrorRef = useRef<ARLiveMirrorHandle | null>(null);
-
-  // Throttle face projection to every 300ms
-  const lastFaceProjectionTime = useRef<number>(0);
-
-  // Reset idle timer on any touch or interaction
-  const recordActivity = useCallback(() => {
-    setIdleTimeRemaining(60);
-    setIsIdle(false);
-  }, []);
-
-  // 1. Initialize PoseTracker and Camera
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const tracker = new PoseTracker();
-    poseTrackerRef.current = tracker;
-
-    tracker.onPoseUpdate = ({ landmarks: lms, liveScales }) => {
-      setLandmarks(lms);
-      setScales(liveScales);
-
-      // Project face if in 3D mode
-      const now = performance.now();
-      if (!tracker.isPaused && now - lastFaceProjectionTime.current > 250) {
-        lastFaceProjectionTime.current = now;
-        if (video.readyState >= 2 && lms.length > 0) {
-          sareeCanvasRef.current?.projectFace(video, lms);
-        }
-      }
-    };
-
-    tracker.onCalibrationChange = (calib) => {
-      setCalibrationState(calib);
-      if (calib.lockedScales) {
-        setScales(calib.lockedScales);
-        if (video.readyState >= 2) {
-          sareeCanvasRef.current?.projectFace(video, landmarks);
-        }
-      }
-    };
-
-    tracker.onCameraChange = (mode) => {
-      setFacingMode(mode);
-      setIsCameraActive(true);
-      setCameraError(null);
-    };
-
-    tracker.onError = (msg) => {
-      setCameraError(msg);
-      setIsCameraActive(false);
-      setIsSimulated(true);
-    };
-
-    tracker.initialize(video).then((success) => {
-      if (success) {
-        setIsCameraActive(true);
-        setCameraError(null);
-      } else {
-        setIsSimulated(true);
-      }
-    });
-
-    return () => {
-      tracker.destroy();
-    };
-  }, []);
-
-  // 2. 60-Second Auto-Reset Idle Timer Loop
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setIdleTimeRemaining((prev) => {
-        if (prev <= 1) {
-          setIsIdle(true);
-          setCurrentPreset(SAREE_CATALOG[0]);
-          materialManagerInstance.applyPreset(SAREE_CATALOG[0].id);
-          sareeCanvasRef.current?.resetCamera();
-          poseTrackerRef.current?.resetCalibration();
-          setIsCameraFrozen(false);
-          poseTrackerRef.current?.resume();
-          setPoseId('front');
-          return 60;
-        }
-        return prev - 1;
+    setIsAiGenerating(true);
+    try {
+      const result = await TryOnSynthesisService.generateTryOn({
+        userImage: targetPhoto,
+        saree: targetSaree,
+        drapingStyle: targetStyle,
+        blouse: targetBlouse,
+        jewellery: targetJewellery,
+        scene: targetScene,
+        isCustomPhoto: targetIsCustom
       });
-    }, 1000);
+      setCurrentLook(result);
+    } catch (e) {
+      console.warn('Try-on update error:', e);
+    } finally {
+      setIsAiGenerating(false);
+    }
+  }, [selectedSaree, selectedStyle, blouseConfig, selectedJewellery, selectedScene, userPhoto, isCustomPhoto]);
 
-    return () => clearInterval(interval);
+  // Initial load
+  useEffect(() => {
+    updateLook();
   }, []);
 
-  // Attach global interaction listeners for idle detection
-  useEffect(() => {
-    const events = ['pointerdown', 'pointermove', 'touchstart', 'keydown'];
-    const handleAction = () => recordActivity();
+  // Handlers
+  const handleSelectSaree = (saree: SareeGarment) => {
+    setSelectedSaree(saree);
+    updateLook({ saree });
+  };
 
-    events.forEach((evt) => window.addEventListener(evt, handleAction, { passive: true }));
-    return () => {
-      events.forEach((evt) => window.removeEventListener(evt, handleAction));
+  const handleSelectStyle = (style: DrapingStyle) => {
+    setSelectedStyle(style);
+    updateLook({ style });
+  };
+
+  const handleChangeBlouse = (blouse: BlouseConfig) => {
+    setBlouseConfig(blouse);
+    updateLook({ blouse });
+  };
+
+  const handleSelectJewellery = (jewellery: JewellerySet) => {
+    setSelectedJewellery(jewellery);
+    updateLook({ jewellery });
+  };
+
+  const handleSelectScene = (scene: OccasionScene) => {
+    setSelectedScene(scene);
+    updateLook({ scene });
+  };
+
+  const handlePhotoUploaded = (photoDataUrl: string) => {
+    setUserPhoto(photoDataUrl);
+    setIsCustomPhoto(true);
+    updateLook({ photo: photoDataUrl, customPhoto: true });
+  };
+
+  const handleResetLook = () => {
+    const defaultSaree = SAREE_PORTAL_CATALOG[0];
+    const defaultStyle = DRAPING_STYLES[0];
+    const defaultBlouse: BlouseConfig = {
+      color: 'inherit',
+      colorName: 'Matching Saree',
+      sleeveStyle: 'elbow',
+      isContrast: false
     };
-  }, [recordActivity]);
+    const defaultJewel = JEWELLERY_SETS[0];
+    const defaultScene = OCCASION_SCENES[0];
+    const defaultPhoto = SAMPLE_USER_MODELS[0].photoUrl;
 
-  // Handle saree preset switch (<100ms PBR texture swap)
-  const handleSelectPreset = (presetId: string) => {
-    recordActivity();
-    const result = materialManagerInstance.applyPreset(presetId);
-    setSwitchTimeMs(result.switchTimeMs);
-    setCurrentPreset(result.preset);
+    setSelectedSaree(defaultSaree);
+    setSelectedStyle(defaultStyle);
+    setBlouseConfig(defaultBlouse);
+    setSelectedJewellery(defaultJewel);
+    setSelectedScene(defaultScene);
+    setUserPhoto(defaultPhoto);
+    setIsCustomPhoto(false);
+
+    updateLook({
+      saree: defaultSaree,
+      style: defaultStyle,
+      blouse: defaultBlouse,
+      jewellery: defaultJewel,
+      scene: defaultScene,
+      photo: defaultPhoto,
+      customPhoto: false
+    });
   };
 
-  // Recalibrate handler
-  const handleRecalibrate = () => {
-    recordActivity();
-    setIsCameraFrozen(false);
-    poseTrackerRef.current?.resume();
-    poseTrackerRef.current?.resetCalibration();
-  };
-
-  // Manual scale fine-tune handler
-  const handleManualScaleChange = (newScales: MorphScales) => {
-    recordActivity();
-    setScales(newScales);
-    poseTrackerRef.current?.setManualScales(newScales);
-  };
-
-  // Switch between front and back camera
-  const handleSwitchCamera = async () => {
-    recordActivity();
-    if (poseTrackerRef.current) {
-      const newMode = await poseTrackerRef.current.switchCamera();
-      setFacingMode(newMode);
-    }
-  };
-
-  // Explicit user-gesture trigger to grant/start camera
-  const handleStartCameraExplicitly = async () => {
-    recordActivity();
-    if (poseTrackerRef.current && videoRef.current) {
-      try {
-        setCameraError(null);
-        await poseTrackerRef.current.startCamera();
-        setIsCameraActive(true);
-        setIsSimulated(false);
-      } catch (err: any) {
-        setCameraError(err?.message || 'Camera permission denied or camera not found.');
+  const handleToggleWishlist = (look: TryOnResult) => {
+    setWishlist((prev) => {
+      const exists = prev.some((l) => l.lookId === look.lookId || (l.saree.id === look.saree.id && l.drapingStyle.id === look.drapingStyle.id));
+      if (exists) {
+        return prev.filter((l) => l.saree.id !== look.saree.id || l.drapingStyle.id !== look.drapingStyle.id);
       }
-    }
+      return [look, ...prev];
+    });
   };
 
-  // Toggle Camera Freeze & Unlock Pose Stills
-  const handleToggleFreezeCamera = () => {
-    recordActivity();
-    const nextFrozen = !isCameraFrozen;
-    setIsCameraFrozen(nextFrozen);
-
-    if (nextFrozen) {
-      if (videoRef.current) {
-        sareeCanvasRef.current?.projectFace(videoRef.current, landmarks);
-      }
-      poseTrackerRef.current?.pause();
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
     } else {
-      poseTrackerRef.current?.resume();
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
     }
   };
 
-  // Select Couture Pose Still
-  const handleSelectPose = (newPoseId: AvatarPoseId) => {
-    recordActivity();
-    setPoseId(newPoseId);
-    sareeCanvasRef.current?.setPose(newPoseId);
+  const handleRequestInStore = () => {
+    setStoreToast(`Look #${currentLook.lookId} saved! Boutique consultant notified for your trial.`);
+    setTimeout(() => setStoreToast(null), 3500);
   };
 
-  // Screen capture & QR photo generation
-  const handleSnapPhoto = () => {
-    recordActivity();
-    setIsAiPhoto(false);
-    let dataUrl = '';
-    if (viewMode === 'ar-live' && arMirrorRef.current) {
-      dataUrl = arMirrorRef.current.captureScreenshot();
-    } else if (sareeCanvasRef.current) {
-      dataUrl = sareeCanvasRef.current.captureScreenshot();
-    }
-
-    if (dataUrl) {
-      setCapturedPhotoUrl(dataUrl);
-      setIsPhotoModalOpen(true);
-    }
-  };
-
-  // Process Uploaded Photo or Camera Frame with Gemini 3D Body Measurement & Face Projection
-  const handleCustomPhotoSelected = async (dataUrl: string) => {
-    recordActivity();
-    setIs3DGenerating(true);
-    setCustomPersonImage(dataUrl);
-
-    // 1. Project customer face from uploaded photo onto 3D Avatar
-    const img = new Image();
-    img.src = dataUrl;
-    img.onload = () => {
-      sareeCanvasRef.current?.projectFaceFromImage(img);
-    };
-
-    // 2. Call Gemini Vision API to analyze exact body measurements & skin undertones
-    try {
-      const analysis = await GeminiStylistService.analyzeBodyAndStyle(dataUrl);
-      if (analysis) {
-        setScales({
-          shoulderScale: analysis.shoulderScale,
-          waistHipScale: analysis.waistHipScale,
-          heightScale: analysis.heightScale
-        });
-        setGeminiAdvice(analysis);
-        if (analysis.bestSareePresetId) {
-          handleSelectPreset(analysis.bestSareePresetId);
-        }
-      }
-    } catch (e) {
-      console.warn('Gemini 3D measurement error:', e);
-    } finally {
-      setIs3DGenerating(false);
-    }
-
-    // 3. Switch to 3D Atelier mode so the user sees their 3D model!
-    setViewMode('3d-atelier');
-  };
-
-  // Generate 3D Avatar directly from live camera feed
-  const handleGenerate3DFromCamera = () => {
-    recordActivity();
-    let frameUrl = '';
-    if (videoRef.current && videoRef.current.readyState >= 1) {
-      const v = videoRef.current;
-      const offscreen = document.createElement('canvas');
-      offscreen.width = v.videoWidth || 720;
-      offscreen.height = v.videoHeight || 1280;
-      const octx = offscreen.getContext('2d');
-      if (octx) {
-        octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
-        frameUrl = offscreen.toDataURL('image/jpeg', 0.92);
-      }
-    } else if (arMirrorRef.current) {
-      frameUrl = arMirrorRef.current.captureScreenshot();
-    }
-
-    if (frameUrl) {
-      handleCustomPhotoSelected(frameUrl);
-    } else {
-      setViewMode('3d-atelier');
-    }
-  };
-
-  // Virtual Saree Try-On (Cloud Replicate IDM-VTON or Local RTX 5060 Ti)
-  const handleAITryOn = async () => {
-    recordActivity();
-    setIsAiLoading(true);
-    try {
-      // If using standard reference model without live camera or custom upload:
-      const hasLiveWebcam = Boolean(videoRef.current && videoRef.current.readyState >= 2 && !isSimulated);
-      if (!customPersonImage && !hasLiveWebcam) {
-        setCapturedPhotoUrl(`/sarees/looks/look_${currentPreset.id}.jpg`);
-        setIsAiPhoto(true);
-        setIsPhotoModalOpen(true);
-        setIsAiLoading(false);
-        return;
-      }
-
-      let rawFrame = customPersonImage || '';
-
-      if (!rawFrame) {
-        if (videoRef.current && videoRef.current.readyState >= 1) {
-          const v = videoRef.current;
-          const offscreen = document.createElement('canvas');
-          offscreen.width = v.videoWidth || 720;
-          offscreen.height = v.videoHeight || 1280;
-          const octx = offscreen.getContext('2d');
-          if (octx) {
-            octx.drawImage(v, 0, 0, offscreen.width, offscreen.height);
-            rawFrame = offscreen.toDataURL('image/jpeg', 0.92);
-          }
-        } else if (arMirrorRef.current) {
-          rawFrame = arMirrorRef.current.captureScreenshot();
-        }
-      }
-
-      if (!rawFrame) {
-        setCapturedPhotoUrl(`/sarees/looks/look_${currentPreset.id}.jpg`);
-        setIsAiPhoto(true);
-        setIsPhotoModalOpen(true);
-        setIsAiLoading(false);
-        return;
-      }
-
-      // If user chose Cloud IDM-VTON (Replicate)
-      if (selectedEngine === 'replicate') {
-        const token = ReplicateVTONService.getStoredToken();
-        if (!token) {
-          setIsSettingsModalOpen(true);
-          setIsAiLoading(false);
-          return;
-        }
-
-        const garmentUrl = `https://virtual-saree-kiosk.onrender.com/sarees/teal_zardozi_reference.jpg`;
-        const repRes = await ReplicateVTONService.tryOnWithReplicate(
-          rawFrame,
-          garmentUrl,
-          `${currentPreset.name} ${currentPreset.fabric} with gold bullion zardozi border and knife pleats`
-        );
-
-        if (repRes.success && repRes.imageUrl) {
-          setCapturedPhotoUrl(repRes.imageUrl);
-          setIsAiPhoto(true);
-          setIsPhotoModalOpen(true);
-          return;
-        } else {
-          console.warn('Replicate failed, falling back to local engine:', repRes.error);
-        }
-      }
-
-      // Local Engine (RTX 5060 Ti)
-      const aiRes = await LocalAIService.tryOn(rawFrame, currentPreset.id, facingMode === 'user');
-      if (aiRes.success && aiRes.result_base64) {
-        setCapturedPhotoUrl(aiRes.result_base64);
-        setIsAiPhoto(true);
-        setIsPhotoModalOpen(true);
-      } else {
-        handleSnapPhoto();
-      }
-    } catch {
-      handleSnapPhoto();
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
+  const isSavedInWishlist = wishlist.some(
+    (l) => l.saree.id === currentLook.saree.id && l.drapingStyle.id === currentLook.drapingStyle.id
+  );
 
   return (
-    <main
-      className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none font-sans"
-      onPointerDown={recordActivity}
-    >
-      {/* Live video element for camera stream (Must be in DOM and NOT display:none so browser decodes frames) */}
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        autoPlay
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '1px',
-          height: '1px',
-          opacity: 0.001,
-          pointerEvents: 'none',
-          zIndex: -9999
-        }}
+    <main className="w-full h-[100dvh] flex flex-col bg-neutral-950 text-white font-sans overflow-hidden select-none">
+      {/* 1. PORTAL HEADER */}
+      <PortalHeader
+        onOpenUpload={() => setIsUploadOpen(true)}
+        onResetLook={handleResetLook}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
+        isAiGenerating={isAiGenerating}
+        hasCustomPhoto={isCustomPhoto}
       />
 
-      {/* Portrait Kiosk Frame (Fluid 100dvh on mobile, 9:16 aspect ratio on desktop/kiosk) */}
-      <div className="relative w-full h-[100dvh] max-w-full sm:max-w-[1080px] sm:max-h-[1920px] sm:aspect-[9/16] bg-neutral-950 shadow-2xl flex flex-col overflow-hidden">
-        {/* Camera Permission Button if camera is not active or waiting for user interaction */}
-        {(!isCameraActive || cameraError) && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-2 px-3 rounded-full bg-neutral-900/95 border border-amber-400/60 backdrop-blur-md shadow-2xl animate-bounce">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            <span className="text-[11px] text-amber-300 font-medium">Camera access required</span>
-            <button
-              onClick={handleStartCameraExplicitly}
-              className="px-3 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs cursor-pointer shadow-md transition-all active:scale-95"
-            >
-              Start Camera
-            </button>
-          </div>
-        )}
-        {/* Fullscreen Viewport: Live AR Smart Mirror (Default) OR 3D Atelier */}
-        {viewMode === 'ar-live' ? (
-          <ARLiveMirror
-            ref={arMirrorRef}
-            videoRef={videoRef}
-            landmarks={landmarks}
-            currentPreset={currentPreset}
-            facingMode={facingMode}
-            isFrozen={isCameraFrozen}
-            customPersonImage={customPersonImage}
+      {/* 2. MAIN 2-COLUMN LUXURY STUDIO LAYOUT */}
+      <div className="flex-1 w-full flex flex-col lg:flex-row overflow-hidden relative">
+        {/* Left Column: Try-On Stage Showcase (60% width on desktop) */}
+        <section className="flex-1 lg:w-[60%] h-[55%] lg:h-full relative overflow-hidden">
+          <TryOnStage
+            currentLook={currentLook}
+            isGenerating={isAiGenerating}
+            onSaveToWishlist={handleToggleWishlist}
+            isSavedInWishlist={isSavedInWishlist}
+            onRequestInStore={handleRequestInStore}
           />
-        ) : (
-          <SareeCanvas
-            ref={sareeCanvasRef}
-            materialManager={materialManagerInstance}
-            currentPresetId={currentPreset.id}
-            scales={scales}
-            poseId={poseId}
-            isIdle={isIdle}
-            customPersonImage={customPersonImage}
+        </section>
+
+        {/* Right Column: Couture Customization Suite Drawer (40% width on desktop) */}
+        <section className="w-full lg:w-[40%] h-[45%] lg:h-full relative overflow-hidden shadow-2xl">
+          <CoutureDrawer
+            selectedSaree={selectedSaree}
+            onSelectSaree={handleSelectSaree}
+            selectedStyle={selectedStyle}
+            onSelectStyle={handleSelectStyle}
+            blouseConfig={blouseConfig}
+            onChangeBlouse={handleChangeBlouse}
+            selectedJewellery={selectedJewellery}
+            onSelectJewellery={handleSelectJewellery}
+            selectedScene={selectedScene}
+            onSelectScene={handleSelectScene}
+            wishlist={wishlist}
+            onSelectSavedLook={(look) => {
+              setSelectedSaree(look.saree);
+              setSelectedStyle(look.drapingStyle);
+              setBlouseConfig(look.blouse);
+              setSelectedJewellery(look.jewellery);
+              setSelectedScene(look.scene);
+              setCurrentLook(look);
+            }}
           />
-        )}
-
-        {/* Gemini Stylist 3D Measurement Card */}
-        {geminiAdvice && viewMode === '3d-atelier' && (
-          <div className="absolute top-16 right-3 sm:right-6 z-30 max-w-[280px] sm:max-w-xs bg-neutral-900/95 border border-amber-500/40 backdrop-blur-md rounded-2xl p-3.5 text-white shadow-2xl animate-fade-in pointer-events-auto">
-            <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-2 mb-2">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-serif tracking-wider uppercase text-amber-300 font-semibold">Gemini 3D Tailor</span>
-              </div>
-              <button
-                onClick={() => setGeminiAdvice(null)}
-                className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="space-y-1.5 text-[11px]">
-              <div className="flex justify-between text-neutral-300">
-                <span className="text-neutral-400">Body Type:</span>
-                <span className="font-semibold text-amber-200">{geminiAdvice.bodyType}</span>
-              </div>
-              <div className="flex justify-between text-neutral-300">
-                <span className="text-neutral-400">Measurements:</span>
-                <span className="font-mono text-neutral-200">
-                  {geminiAdvice.estimatedHeightCm}cm H · {geminiAdvice.estimatedWaistCm}cm W
-                </span>
-              </div>
-              <div className="flex justify-between text-neutral-300">
-                <span className="text-neutral-400">Skin Undertone:</span>
-                <span className="text-amber-200">{geminiAdvice.skinUndertone}</span>
-              </div>
-              <div className="flex justify-between text-neutral-300">
-                <span className="text-neutral-400">Best Color:</span>
-                <span className="font-medium text-emerald-400">{geminiAdvice.bestSareeName}</span>
-              </div>
-              <p className="text-[10px] text-neutral-300 bg-neutral-950/70 p-2 rounded-xl border border-neutral-800 mt-1 leading-relaxed italic">
-                "{geminiAdvice.stylingAdvice}"
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* HUD & Kiosk Touch Controls */}
-        <KioskOverlay
-          currentPreset={currentPreset}
-          onSelectPreset={handleSelectPreset}
-          onSnapPhoto={handleSnapPhoto}
-          onAITryOn={handleAITryOn}
-          onOpenUpload={() => setIsUploadModalOpen(true)}
-          onOpenSettings={() => setIsSettingsModalOpen(true)}
-          selectedEngine={selectedEngine}
-          hasCustomPhoto={Boolean(customPersonImage)}
-          onClearCustomPhoto={() => setCustomPersonImage(null)}
-          isAiLoading={isAiLoading}
-          isAiOnline={isAiOnline}
-          videoRef={videoRef}
-          landmarks={landmarks}
-          calibrationState={calibrationState}
-          onRecalibrate={handleRecalibrate}
-          scales={scales}
-          onManualScaleChange={handleManualScaleChange}
-          isSimulated={isSimulated}
-          switchTimeMs={switchTimeMs}
-          idleTimeRemaining={idleTimeRemaining}
-          facingMode={facingMode}
-          onSwitchCamera={handleSwitchCamera}
-          currentPoseId={poseId}
-          onSelectPose={handleSelectPose}
-          isCameraFrozen={isCameraFrozen}
-          onToggleFreezeCamera={handleToggleFreezeCamera}
-          viewMode={viewMode}
-          onToggleViewMode={setViewMode}
-          onGenerate3DFromCamera={handleGenerate3DFromCamera}
-        />
-
-        {/* Luxury Gemini 3D Generating HUD */}
-        {is3DGenerating && (
-          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-md text-white p-6 animate-fadeIn pointer-events-auto">
-            <div className="relative mb-5">
-              <div className="w-16 h-16 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-              <Sparkles className="w-6 h-6 text-amber-400 absolute inset-0 m-auto animate-pulse" />
-            </div>
-            <h3 className="text-xl font-serif text-white tracking-wide mb-1.5 text-center">
-              Tailoring Your 3D Avatar
-            </h3>
-            <p className="text-xs text-amber-300 font-mono tracking-wider uppercase mb-2">
-              Gemini Vision 3D Tailoring
-            </p>
-            <p className="text-xs text-neutral-400 text-center max-w-xs leading-relaxed">
-              Analyzing exact shoulder, waist, and height proportions from your image and sculpting your bespoke 3D mannequin...
-            </p>
-          </div>
-        )}
-
-        {/* Photo Upload Modal */}
-        <UploadModal
-          isOpen={isUploadModalOpen}
-          onClose={() => setIsUploadModalOpen(false)}
-          onSelectPhoto={handleCustomPhotoSelected}
-        />
-
-        {/* AI VTON Settings Modal */}
-        <VTONSettingsModal
-          isOpen={isSettingsModalOpen}
-          onClose={() => setIsSettingsModalOpen(false)}
-          selectedEngine={selectedEngine}
-          onSelectEngine={(engine) => setSelectedEngine(engine)}
-        />
-
-        {/* Photo Look Capture & QR Code Modal */}
-        <PhotoModal
-          isOpen={isPhotoModalOpen}
-          onClose={() => setIsPhotoModalOpen(false)}
-          photoUrl={capturedPhotoUrl}
-          preset={currentPreset}
-          scales={scales}
-          isAiGenerated={isAiPhoto}
-          onGenerate3D={handleCustomPhotoSelected}
-        />
+        </section>
       </div>
+
+      {/* 3. MODALS */}
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onSelectPhoto={handlePhotoUploaded}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* 4. TOAST NOTIFICATION */}
+      {storeToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-neutral-900/95 border border-amber-400/80 backdrop-blur-md text-amber-300 text-xs font-medium shadow-2xl animate-bounce flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span>{storeToast}</span>
+        </div>
+      )}
     </main>
   );
 }

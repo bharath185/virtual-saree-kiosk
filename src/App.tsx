@@ -15,7 +15,7 @@ import {
   SAMPLE_USER_MODELS
 } from './data/portalCatalog';
 import { TryOnSynthesisService } from './services/TryOnSynthesisService';
-import { GeminiStylistService } from './services/GeminiStylistService';
+import { GeminiStylistService, type GeminiBodyAnalysis } from './services/GeminiStylistService';
 import { PortalHeader } from './components/portal/PortalHeader';
 import { TryOnStage } from './components/portal/TryOnStage';
 import { CoutureDrawer } from './components/portal/CoutureDrawer';
@@ -66,6 +66,7 @@ export function App() {
     waistHipScale: 1.0,
     heightScale: 1.0
   });
+  const [geminiAdvice, setGeminiAdvice] = useState<GeminiBodyAnalysis | null>(null);
 
   // 4. Modal Visibility
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
@@ -150,6 +151,7 @@ export function App() {
     try {
       const analysis = await GeminiStylistService.analyzeBodyAndStyle(photoDataUrl);
       if (analysis) {
+        setGeminiAdvice(analysis);
         setScales({
           shoulderScale: analysis.shoulderScale,
           waistHipScale: analysis.waistHipScale,
@@ -246,6 +248,8 @@ export function App() {
             isSavedInWishlist={isSavedInWishlist}
             onRequestInStore={handleRequestInStore}
             scales={scales}
+            onScalesChange={setScales}
+            geminiAdvice={geminiAdvice}
           />
         </section>
 

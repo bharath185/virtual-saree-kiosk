@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { TryOnResult } from '../../types/portal';
 import { Lady3DStudio } from './Lady3DStudio';
+import type { GeminiBodyAnalysis } from '../../services/GeminiStylistService';
 
 interface TryOnStageProps {
   currentLook: TryOnResult;
@@ -26,6 +27,8 @@ interface TryOnStageProps {
     waistHipScale: number;
     heightScale: number;
   };
+  onScalesChange?: (newScales: { shoulderScale: number; waistHipScale: number; heightScale: number }) => void;
+  geminiAdvice?: GeminiBodyAnalysis | null;
 }
 
 export type StageViewMode = 'front' | 'back' | 'dual' | 'compare' | '3d';
@@ -36,9 +39,11 @@ export const TryOnStage: FC<TryOnStageProps> = ({
   onSaveToWishlist,
   isSavedInWishlist,
   onRequestInStore,
-  scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 }
+  scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 },
+  onScalesChange,
+  geminiAdvice
 }) => {
-  const [viewMode, setViewMode] = useState<StageViewMode>('front');
+  const [viewMode, setViewMode] = useState<StageViewMode>('3d');
   const [sliderPos, setSliderPos] = useState<number>(50); // percentage for compare slider
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -278,6 +283,8 @@ export const TryOnStage: FC<TryOnStageProps> = ({
             userPhoto={currentLook.originalUserPhoto}
             isCustomPhoto={currentLook.isAiGenerated}
             scales={scales}
+            onScalesChange={onScalesChange}
+            geminiAdvice={geminiAdvice}
           />
         )}
 

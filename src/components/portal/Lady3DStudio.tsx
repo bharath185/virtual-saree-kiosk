@@ -1,45 +1,46 @@
 import { useEffect, useRef, useState, type FC } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RotateCw, RefreshCcw, Sparkles, Check } from 'lucide-react';
+import { RotateCw, RefreshCcw, Sparkles, Check, Sliders, ChevronUp } from 'lucide-react';
 import type { SareeGarment } from '../../types/portal';
 import { MaterialManager } from '../../engine/MaterialManager';
+import { MannequinMeshGenerator, type MannequinRig } from '../../engine/MannequinMeshGenerator';
 import { FaceProjectionEngine } from '../../engine/FaceProjectionEngine';
+import type { GeminiBodyAnalysis } from '../../services/GeminiStylistService';
 
 interface Lady3DStudioProps {
   selectedSaree: SareeGarment;
   userPhoto?: string;
   isCustomPhoto?: boolean;
-  scales?: {
+  scales: {
     shoulderScale: number;
     waistHipScale: number;
     heightScale: number;
   };
+  onScalesChange?: (newScales: { shoulderScale: number; waistHipScale: number; heightScale: number }) => void;
+  geminiAdvice?: GeminiBodyAnalysis | null;
 }
 
 export const Lady3DStudio: FC<Lady3DStudioProps> = ({
   selectedSaree,
   userPhoto,
   isCustomPhoto = false,
-  scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 }
+  scales,
+  onScalesChange,
+  geminiAdvice
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
-
-  const ladyModelRef = useRef<THREE.Object3D | null>(null);
-  const sareeMeshRef = useRef<THREE.Mesh | null>(null);
-  const headMeshRef = useRef<THREE.Mesh | null>(null);
+  const rigRef = useRef<MannequinRig | null>(null);
   const materialManagerRef = useRef<MaterialManager>(new MaterialManager());
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAutoSpinning, setIsAutoSpinning] = useState<boolean>(false);
   const [activeCamAngle, setActiveCamAngle] = useState<'front' | 'back' | 'side'>('front');
+  const [showSliders, setShowSliders] = useState<boolean>(false);
 
   // 1. Initialize Three.js Scene, Camera, Lighting, Controls
   useEffect(() => {
@@ -52,11 +53,11 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
     // Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x0a0a0f);
+    scene.background = new THREE.Color(0x06060a);
 
     // Camera (Focal length suited for fashion portrait)
     const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 50);
-    camera.position.set(0, 1.05, 3.2);
+    camera.position.set(0, 1.15, 3.2);
     cameraRef.current = camera;
 
     // Renderer with ACESFilmic tone mapping & PBR soft shadows
@@ -79,16 +80,16 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 1.5;
+    controls.minDistance = 1.4;
     controls.maxDistance = 4.5;
     controls.minPolarAngle = Math.PI / 4;
-    controls.maxPolarAngle = Math.PI / 2 + 0.05;
-    controls.target.set(0, 0.95, 0);
+    controls.maxPolarAngle = Math.PI / 2 + 0.04;
+    controls.target.set(0, 0.98, 0);
     controls.update();
     controlsRef.current = controls;
 
     // Three-Point Studio Lighting Rig
-    const ambientLight = new THREE.AmbientLight(0xfff5ea, 1.1);
+    const ambientLight = new THREE.AmbientLight(0xfff5ea, 1.2);
     scene.add(ambientLight);
 
     // Key Light (Warm soft fashion spotlight)
@@ -105,11 +106,11 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
     scene.add(fillLight);
 
     // Rim Light (Metallic gold edge highlight for zari pop)
-    const rimLight = new THREE.DirectionalLight(0xffdf88, 3.2);
+    const rimLight = new THREE.DirectionalLight(0xffdf88, 3.4);
     rimLight.position.set(0, 3.0, -2.8);
     scene.add(rimLight);
 
-    // Floor Shadow Receiver & Pedestal
+    // Floor Shadow Receiver
     const groundGeo = new THREE.PlaneGeometry(8, 8);
     const groundMat = new THREE.ShadowMaterial({ opacity: 0.35 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -118,95 +119,30 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const pedestalGeo = new THREE.CylinderGeometry(0.52, 0.56, 0.05, 48);
-    const pedestalMat = new THREE.MeshStandardMaterial({
-      color: 0x141418,
-      roughness: 0.25,
-      metalness: 0.7
-    });
-    const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
-    pedestal.position.y = 0.025;
-    pedestal.receiveShadow = true;
-    scene.add(pedestal);
-
-    // Load 3D Saree Material
+    // 2. Load 3D Saree Material & Procedural Couture Rig
     materialManagerRef.current.applyPreset(selectedSaree.id);
     const sareeMaterial = materialManagerRef.current.getMaterial();
 
-    // 2. Load the Lady OBJ Model from web/public directory
-    const mtlLoader = new MTLLoader();
-    mtlLoader.setPath('/models/');
-    mtlLoader.load(
-      'female02.mtl',
-      (materials) => {
-        materials.preload();
+    const rig = MannequinMeshGenerator.createRig(sareeMaterial);
+    rigRef.current = rig;
+    scene.add(rig.group);
+    rig.updateMorphs(scales.shoulderScale, scales.waistHipScale, scales.heightScale);
+    rig.setPose('front');
 
-        const objLoader = new OBJLoader();
-        objLoader.setMaterials(materials);
-        objLoader.setPath('/models/');
-        objLoader.load(
-          'female02.obj',
-          (object) => {
-            // female02 is in centimeters (height ~168cm). Scale to meters (x0.01)
-            const sx = 0.01 * (scales.shoulderScale || 1.0);
-            const sy = 0.01 * (scales.heightScale || 1.0);
-            const sz = 0.01 * (scales.waistHipScale || 1.0);
-            object.scale.set(sx, sy, sz);
-            object.position.set(0, 0, 0);
+    // Project face if user photo is present
+    if (userPhoto) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const faceTex = FaceProjectionEngine.projectFaceFromImage(img);
+        rig.updateFaceTexture(faceTex);
+      };
+      img.src = userPhoto;
+    }
 
-            // Traverse meshes and adjust materials
-            object.traverse((child) => {
-              if ((child as THREE.Mesh).isMesh) {
-                const mesh = child as THREE.Mesh;
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
+    setIsLoading(false);
 
-                // Identify head/face mesh for texture projection
-                if (mesh.name.toLowerCase().includes('head') || mesh.name.toLowerCase().includes('face')) {
-                  headMeshRef.current = mesh;
-                }
-              }
-            });
-
-            scene.add(object);
-            ladyModelRef.current = object;
-
-            // 3. Drape 3D Saree Mesh over the Lady Model
-            const sareeMesh = createDrapedSareeMesh(sareeMaterial);
-            sareeMesh.scale.set(sx, sy, sz);
-            scene.add(sareeMesh);
-            sareeMeshRef.current = sareeMesh;
-
-            // Project face if user photo is available
-            if (userPhoto) {
-              projectCustomerFace(userPhoto);
-            }
-
-            setIsLoading(false);
-          },
-          undefined,
-          (err) => {
-            console.warn('Error loading female02.obj, building procedural mannequin:', err);
-            // Fallback parametric mannequin
-            const fallbackGroup = createProceduralLadyModel(sareeMaterial);
-            scene.add(fallbackGroup);
-            ladyModelRef.current = fallbackGroup;
-            setIsLoading(false);
-          }
-        );
-      },
-      undefined,
-      (err) => {
-        console.warn('Error loading female02.mtl:', err);
-        // Fallback procedural mannequin
-        const fallbackGroup = createProceduralLadyModel(sareeMaterial);
-        scene.add(fallbackGroup);
-        ladyModelRef.current = fallbackGroup;
-        setIsLoading(false);
-      }
-    );
-
-    // 4. Animation render loop
+    // 3. Animation render loop
     let animId: number;
     const animate = () => {
       animId = requestAnimationFrame(animate);
@@ -240,29 +176,28 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
   useEffect(() => {
     materialManagerRef.current.applyPreset(selectedSaree.id);
     const newMat = materialManagerRef.current.getMaterial();
-    if (sareeMeshRef.current) {
-      sareeMeshRef.current.material = newMat;
+    if (rigRef.current) {
+      rigRef.current.sareeMesh.material = newMat;
     }
   }, [selectedSaree]);
 
-  // Update Body Dimensions when scales change (Gemini Vision output)
+  // Update Body Dimensions when scales change (Gemini Vision or manual sliders)
   useEffect(() => {
-    const sx = 0.01 * (scales.shoulderScale || 1.0);
-    const sy = 0.01 * (scales.heightScale || 1.0);
-    const sz = 0.01 * (scales.waistHipScale || 1.0);
-
-    if (ladyModelRef.current) {
-      ladyModelRef.current.scale.set(sx, sy, sz);
-    }
-    if (sareeMeshRef.current) {
-      sareeMeshRef.current.scale.set(sx, sy, sz);
+    if (rigRef.current) {
+      rigRef.current.updateMorphs(scales.shoulderScale, scales.waistHipScale, scales.heightScale);
     }
   }, [scales]);
 
   // Project customer face when userPhoto changes
   useEffect(() => {
-    if (userPhoto) {
-      projectCustomerFace(userPhoto);
+    if (userPhoto && rigRef.current) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const faceTex = FaceProjectionEngine.projectFaceFromImage(img);
+        rigRef.current?.updateFaceTexture(faceTex);
+      };
+      img.src = userPhoto;
     }
   }, [userPhoto]);
 
@@ -274,36 +209,23 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
     }
   }, [isAutoSpinning]);
 
-  const projectCustomerFace = (photoUrl: string) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const faceTex = FaceProjectionEngine.projectFaceFromImage(img);
-      if (headMeshRef.current) {
-        (headMeshRef.current.material as THREE.MeshStandardMaterial).map = faceTex;
-        (headMeshRef.current.material as THREE.MeshStandardMaterial).needsUpdate = true;
-      }
-    };
-    img.src = photoUrl;
-  };
-
   const setCameraAngle = (angle: 'front' | 'back' | 'side') => {
     setActiveCamAngle(angle);
     if (!cameraRef.current || !controlsRef.current) return;
     const cam = cameraRef.current;
     if (angle === 'front') {
-      cam.position.set(0, 1.05, 3.2);
+      cam.position.set(0, 1.15, 3.2);
     } else if (angle === 'back') {
-      cam.position.set(0, 1.05, -3.2);
+      cam.position.set(0, 1.15, -3.2);
     } else if (angle === 'side') {
-      cam.position.set(2.8, 1.05, 0.4);
+      cam.position.set(2.8, 1.15, 0.4);
     }
-    controlsRef.current.target.set(0, 0.95, 0);
+    controlsRef.current.target.set(0, 0.98, 0);
     controlsRef.current.update();
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none">
+    <div className="relative w-full h-full overflow-hidden select-none bg-neutral-950">
       {/* 3D Canvas WebGL Container */}
       <div
         ref={containerRef}
@@ -314,7 +236,7 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
       {isLoading && (
         <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fadeIn z-20">
           <div className="w-12 h-12 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mb-3" />
-          <h4 className="text-sm font-serif text-white">Loading 3D Female Lady Model...</h4>
+          <h4 className="text-sm font-serif text-white">Loading 3D Couture Model...</h4>
           <p className="text-[11px] text-neutral-400 mt-1">Applying {selectedSaree.name} PBR drape & textures</p>
         </div>
       )}
@@ -351,7 +273,7 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
-            Side
+            Side Profile
           </button>
         </div>
 
@@ -378,30 +300,113 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
         </button>
       </div>
 
-      {/* Body Proportions & Gemini 3D Badge (Top Left) */}
-      <div className="absolute top-3 left-3 z-10 p-2.5 rounded-2xl bg-neutral-950/85 border border-amber-500/30 backdrop-blur-md shadow-2xl flex flex-col gap-1 text-[10px]">
-        <div className="flex items-center gap-1.5 text-amber-300 font-serif font-bold uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>3D Female Model</span>
+      {/* Body Measurements & Sizing Panel (Top Left) */}
+      <div className="absolute top-3 left-3 z-10 p-3 rounded-2xl bg-neutral-950/90 border border-amber-500/40 backdrop-blur-md shadow-2xl flex flex-col gap-1.5 text-[11px] max-w-[240px]">
+        <div className="flex items-center justify-between gap-2 border-b border-neutral-800/80 pb-1.5">
+          <div className="flex items-center gap-1.5 text-amber-300 font-serif font-bold uppercase tracking-wider text-[10px]">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>3D Body Measurements</span>
+          </div>
+          <button
+            onClick={() => setShowSliders(!showSliders)}
+            className="text-neutral-400 hover:text-white p-0.5 rounded cursor-pointer"
+            title="Toggle measurement adjustments"
+          >
+            {showSliders ? <ChevronUp className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5 text-amber-400" />}
+          </button>
         </div>
-        <div className="space-y-0.5 text-neutral-300 font-mono mt-0.5">
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-400">Shoulder:</span>
-            <span className="text-amber-300">{(scales.shoulderScale * 100).toFixed(0)}%</span>
+
+        {/* Readouts */}
+        <div className="space-y-1 text-neutral-300 font-mono text-[10px]">
+          {geminiAdvice && (
+            <div className="flex justify-between items-center text-amber-300 font-serif font-semibold pb-1 border-b border-neutral-900">
+              <span className="text-neutral-400">Body Type:</span>
+              <span>{geminiAdvice.bodyType}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-neutral-400">Shoulders:</span>
+            <span className="text-amber-200">
+              {geminiAdvice?.estimatedShoulderCm ? `${geminiAdvice.estimatedShoulderCm}cm` : `${(scales.shoulderScale * 100).toFixed(0)}%`}
+            </span>
           </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-neutral-400">Waist/Hip:</span>
-            <span className="text-amber-300">{(scales.waistHipScale * 100).toFixed(0)}%</span>
+          <div className="flex justify-between">
+            <span className="text-neutral-400">Waist / Hips:</span>
+            <span className="text-amber-200">
+              {geminiAdvice?.estimatedWaistCm ? `${geminiAdvice.estimatedWaistCm}cm` : `${(scales.waistHipScale * 100).toFixed(0)}%`}
+            </span>
           </div>
-          <div className="flex justify-between gap-3">
+          <div className="flex justify-between">
             <span className="text-neutral-400">Height:</span>
-            <span className="text-amber-300">{(scales.heightScale * 100).toFixed(0)}%</span>
+            <span className="text-amber-200">
+              {geminiAdvice?.estimatedHeightCm ? `${geminiAdvice.estimatedHeightCm}cm` : `${(scales.heightScale * 100).toFixed(0)}%`}
+            </span>
           </div>
         </div>
+
+        {/* Interactive Sliders (When expanded) */}
+        {showSliders && onScalesChange && (
+          <div className="mt-2 pt-2 border-t border-neutral-800/80 space-y-2">
+            <div>
+              <div className="flex justify-between text-[9px] text-neutral-400">
+                <span>Shoulder Span</span>
+                <span>{(scales.shoulderScale * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.85"
+                max="1.25"
+                step="0.01"
+                value={scales.shoulderScale}
+                onChange={(e) =>
+                  onScalesChange({ ...scales, shoulderScale: parseFloat(e.target.value) })
+                }
+                className="w-full accent-amber-400 h-1 bg-neutral-800 rounded-lg cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-[9px] text-neutral-400">
+                <span>Waist & Hips</span>
+                <span>{(scales.waistHipScale * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.80"
+                max="1.30"
+                step="0.01"
+                value={scales.waistHipScale}
+                onChange={(e) =>
+                  onScalesChange({ ...scales, waistHipScale: parseFloat(e.target.value) })
+                }
+                className="w-full accent-amber-400 h-1 bg-neutral-800 rounded-lg cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-[9px] text-neutral-400">
+                <span>Height</span>
+                <span>{(scales.heightScale * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.90"
+                max="1.15"
+                step="0.01"
+                value={scales.heightScale}
+                onChange={(e) =>
+                  onScalesChange({ ...scales, heightScale: parseFloat(e.target.value) })
+                }
+                className="w-full accent-amber-400 h-1 bg-neutral-800 rounded-lg cursor-pointer"
+              />
+            </div>
+          </div>
+        )}
+
         {isCustomPhoto && (
           <div className="flex items-center gap-1 text-[9px] text-emerald-400 mt-1 pt-1 border-t border-neutral-800">
             <Check className="w-3 h-3" />
-            <span>Face Projected on Model</span>
+            <span>Face Mapped onto 3D Model</span>
           </div>
         )}
       </div>
@@ -409,110 +414,8 @@ export const Lady3DStudio: FC<Lady3DStudioProps> = ({
       {/* Interaction Hint (Bottom) */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-neutral-950/80 border border-neutral-800 backdrop-blur-md text-[10px] text-neutral-400 flex items-center gap-1.5 shadow-lg pointer-events-none">
         <Sparkles className="w-3 h-3 text-amber-400" />
-        <span>Drag 360° to inspect drape · Pinch or scroll to zoom</span>
+        <span>Drag 360° to view drape · Pinch or scroll to zoom</span>
       </div>
     </div>
   );
 };
-
-/**
- * Creates the high-resolution 3D Saree draped geometry (pleats, waistband, bodice wrap, and pallu)
- */
-function createDrapedSareeMesh(material: THREE.Material): THREE.Mesh {
-  // 1. Saree Skirt & Knife Pleats (Waist Y=0.88 down to Y=0.08)
-  const skirtGeo = new THREE.CylinderGeometry(0.24, 0.32, 0.82, 36, 12, true);
-  skirtGeo.translate(0, 0.49, 0);
-
-  // Apply subtle ripple pleats to vertices
-  const pos = skirtGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-
-    // Front knife pleat folding
-    if (z > 0 && y < 0.82) {
-      const angle = Math.atan2(z, x);
-      const wave = Math.sin(angle * 14) * 0.015;
-      pos.setZ(i, z + wave);
-    }
-  }
-  skirtGeo.computeVertexNormals();
-
-  // 2. Bodice Pallu Wrap (Diagonal curve from right waist over left shoulder)
-  const bodiceCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0.18, 0.86, 0.12),
-    new THREE.Vector3(0.08, 1.02, 0.16),
-    new THREE.Vector3(-0.06, 1.20, 0.15),
-    new THREE.Vector3(-0.16, 1.34, 0.08),
-    new THREE.Vector3(-0.18, 1.38, -0.06)
-  ]);
-  const bodiceTube = new THREE.TubeGeometry(bodiceCurve, 24, 0.09, 8, false);
-
-  // 3. Flowing Pallu Cascade (Falling down the back from left shoulder)
-  const palluCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.18, 1.38, -0.06),
-    new THREE.Vector3(-0.16, 1.15, -0.16),
-    new THREE.Vector3(-0.14, 0.88, -0.19),
-    new THREE.Vector3(-0.12, 0.55, -0.21)
-  ]);
-  const palluRibbon = new THREE.TubeGeometry(palluCurve, 28, 0.10, 8, false);
-
-  const merged = mergeGeometries([skirtGeo, bodiceTube, palluRibbon], false) || skirtGeo;
-  merged.computeVertexNormals();
-
-  const mesh = new THREE.Mesh(merged, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-/**
- * Procedural Anatomical Female Mannequin Model
- */
-function createProceduralLadyModel(sareeMaterial: THREE.Material): THREE.Group {
-  const group = new THREE.Group();
-
-  const skinMat = new THREE.MeshStandardMaterial({
-    color: 0xdeb887,
-    roughness: 0.38,
-    metalness: 0.04
-  });
-
-  // Torso
-  const torsoGeo = new THREE.CylinderGeometry(0.18, 0.16, 0.52, 24);
-  torsoGeo.translate(0, 1.18, 0);
-  const torso = new THREE.Mesh(torsoGeo, skinMat);
-  torso.castShadow = true;
-  group.add(torso);
-
-  // Head
-  const headGeo = new THREE.SphereGeometry(0.10, 24, 24);
-  headGeo.scale(0.85, 1.15, 0.95);
-  headGeo.translate(0, 1.58, 0.02);
-  const head = new THREE.Mesh(headGeo, skinMat);
-  head.castShadow = true;
-  group.add(head);
-
-  // Neck
-  const neckGeo = new THREE.CylinderGeometry(0.055, 0.07, 0.12, 16);
-  neckGeo.translate(0, 1.48, 0);
-  const neck = new THREE.Mesh(neckGeo, skinMat);
-  group.add(neck);
-
-  // Legs
-  const legGeo = new THREE.CylinderGeometry(0.065, 0.05, 0.88, 16);
-  const leftLeg = new THREE.Mesh(legGeo, skinMat);
-  leftLeg.position.set(-0.09, 0.44, 0);
-  group.add(leftLeg);
-
-  const rightLeg = new THREE.Mesh(legGeo, skinMat);
-  rightLeg.position.set(0.09, 0.44, 0);
-  group.add(rightLeg);
-
-  // Drape
-  const drape = createDrapedSareeMesh(sareeMaterial);
-  group.add(drape);
-
-  return group;
-}

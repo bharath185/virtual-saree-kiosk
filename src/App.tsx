@@ -15,6 +15,7 @@ import {
   SAMPLE_USER_MODELS
 } from './data/portalCatalog';
 import { TryOnSynthesisService } from './services/TryOnSynthesisService';
+import { GeminiStylistService } from './services/GeminiStylistService';
 import { PortalHeader } from './components/portal/PortalHeader';
 import { TryOnStage } from './components/portal/TryOnStage';
 import { CoutureDrawer } from './components/portal/CoutureDrawer';
@@ -60,6 +61,11 @@ export function App() {
 
   const [isAiGenerating, setIsAiGenerating] = useState<boolean>(false);
   const [wishlist, setWishlist] = useState<TryOnResult[]>([]);
+  const [scales, setScales] = useState<{ shoulderScale: number; waistHipScale: number; heightScale: number }>({
+    shoulderScale: 1.0,
+    waistHipScale: 1.0,
+    heightScale: 1.0
+  });
 
   // 4. Modal Visibility
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
@@ -135,10 +141,24 @@ export function App() {
     updateLook({ scene });
   };
 
-  const handlePhotoUploaded = (photoDataUrl: string) => {
+  const handlePhotoUploaded = async (photoDataUrl: string) => {
     setUserPhoto(photoDataUrl);
     setIsCustomPhoto(true);
     updateLook({ photo: photoDataUrl, customPhoto: true });
+
+    // Call Gemini to analyze body measurements and update 3D model scales
+    try {
+      const analysis = await GeminiStylistService.analyzeBodyAndStyle(photoDataUrl);
+      if (analysis) {
+        setScales({
+          shoulderScale: analysis.shoulderScale,
+          waistHipScale: analysis.waistHipScale,
+          heightScale: analysis.heightScale
+        });
+      }
+    } catch (e) {
+      console.warn('Gemini 3D size extraction notice:', e);
+    }
   };
 
   const handleResetLook = () => {
@@ -225,6 +245,7 @@ export function App() {
             onSaveToWishlist={handleToggleWishlist}
             isSavedInWishlist={isSavedInWishlist}
             onRequestInStore={handleRequestInStore}
+            scales={scales}
           />
         </section>
 

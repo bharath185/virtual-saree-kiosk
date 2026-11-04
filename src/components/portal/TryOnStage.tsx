@@ -9,9 +9,11 @@ import {
   Eye,
   Layers,
   Check,
-  Split
+  Split,
+  Box
 } from 'lucide-react';
 import type { TryOnResult } from '../../types/portal';
+import { Lady3DStudio } from './Lady3DStudio';
 
 interface TryOnStageProps {
   currentLook: TryOnResult;
@@ -19,16 +21,22 @@ interface TryOnStageProps {
   onSaveToWishlist: (look: TryOnResult) => void;
   isSavedInWishlist: boolean;
   onRequestInStore: () => void;
+  scales?: {
+    shoulderScale: number;
+    waistHipScale: number;
+    heightScale: number;
+  };
 }
 
-export type StageViewMode = 'front' | 'back' | 'dual' | 'compare';
+export type StageViewMode = 'front' | 'back' | 'dual' | 'compare' | '3d';
 
 export const TryOnStage: FC<TryOnStageProps> = ({
   currentLook,
   isGenerating,
   onSaveToWishlist,
   isSavedInWishlist,
-  onRequestInStore
+  onRequestInStore,
+  scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 }
 }) => {
   const [viewMode, setViewMode] = useState<StageViewMode>('front');
   const [sliderPos, setSliderPos] = useState<number>(50); // percentage for compare slider
@@ -121,6 +129,18 @@ export const TryOnStage: FC<TryOnStageProps> = ({
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Before / After</span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('3d')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === '3d'
+                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Box className="w-3.5 h-3.5" />
+            <span>3D Model</span>
           </button>
         </div>
 
@@ -249,6 +269,16 @@ export const TryOnStage: FC<TryOnStageProps> = ({
               Virtual Drape
             </span>
           </div>
+        )}
+
+        {/* VIEW MODE 5: 3D Female Lady Model (Interactive 360°) */}
+        {viewMode === '3d' && (
+          <Lady3DStudio
+            selectedSaree={currentLook.saree}
+            userPhoto={currentLook.originalUserPhoto}
+            isCustomPhoto={currentLook.isAiGenerated}
+            scales={scales}
+          />
         )}
 
         {/* Active Style Badges (Bottom Overlay) */}

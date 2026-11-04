@@ -10,7 +10,9 @@ import {
   Layers,
   Check,
   Split,
-  Box
+  Box,
+  RefreshCw,
+  Wand2
 } from 'lucide-react';
 import type { TryOnResult } from '../../types/portal';
 import { Lady3DStudio } from './Lady3DStudio';
@@ -22,6 +24,7 @@ interface TryOnStageProps {
   onSaveToWishlist: (look: TryOnResult) => void;
   isSavedInWishlist: boolean;
   onRequestInStore: () => void;
+  onRegenerate?: () => void;
   scales?: {
     shoulderScale: number;
     waistHipScale: number;
@@ -39,11 +42,13 @@ export const TryOnStage: FC<TryOnStageProps> = ({
   onSaveToWishlist,
   isSavedInWishlist,
   onRequestInStore,
+  onRegenerate,
   scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 },
   onScalesChange,
   geminiAdvice
 }) => {
-  const [viewMode, setViewMode] = useState<StageViewMode>('3d');
+  // Default to photorealistic AI image view (ChatGPT style)
+  const [viewMode, setViewMode] = useState<StageViewMode>('front');
   const [sliderPos, setSliderPos] = useState<number>(50); // percentage for compare slider
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,50 +88,38 @@ export const TryOnStage: FC<TryOnStageProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-between p-3 sm:p-6 overflow-hidden bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950">
-      {/* 1. TOP VIEW MODE CONTROLS */}
-      <div className="w-full max-w-xl flex items-center justify-between gap-2 z-20">
+    <div className="relative w-full h-full flex flex-col items-center justify-between p-3 sm:p-5 overflow-hidden bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950">
+      {/* 1. TOP VIEW MODE CONTROLS & CHATGPT EDIT INDICATOR */}
+      <div className="w-full max-w-2xl flex flex-wrap items-center justify-between gap-2 z-20">
         {/* Dual View Selector Pill */}
-        <div className="p-1 rounded-full bg-neutral-900/90 border border-neutral-800 shadow-xl backdrop-blur-md flex items-center gap-1">
+        <div className="p-1 rounded-full bg-neutral-900/90 border border-neutral-800 shadow-xl backdrop-blur-md flex items-center gap-1 overflow-x-auto max-w-full">
           <button
             onClick={() => setViewMode('front')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === 'front'
                 ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>Front View</span>
+            <span>AI Photo</span>
           </button>
 
           <button
             onClick={() => setViewMode('back')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === 'back'
                 ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Back View (Pallu Fall)</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode('dual')}
-            className={`hidden sm:flex px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer items-center gap-1.5 ${
-              viewMode === 'dual'
-                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <Split className="w-3.5 h-3.5" />
-            <span>Dual View</span>
+            <span>Pallu Fall</span>
           </button>
 
           <button
             onClick={() => setViewMode('compare')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === 'compare'
                 ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
                 : 'text-neutral-400 hover:text-white'
@@ -137,67 +130,98 @@ export const TryOnStage: FC<TryOnStageProps> = ({
           </button>
 
           <button
+            onClick={() => setViewMode('dual')}
+            className={`hidden sm:flex px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer items-center gap-1.5 whitespace-nowrap ${
+              viewMode === 'dual'
+                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Split className="w-3.5 h-3.5" />
+            <span>Dual</span>
+          </button>
+
+          <button
             onClick={() => setViewMode('3d')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === '3d'
                 ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
             <Box className="w-3.5 h-3.5" />
-            <span>3D Model</span>
+            <span>3D Studio</span>
           </button>
         </div>
 
-        {/* Look Reference Code */}
-        <span className="hidden md:inline-block font-mono text-[11px] text-amber-400/80 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
-          Ref #{currentLook.lookId}
-        </span>
+        {/* ChatGPT Edit / Regenerate Action */}
+        <div className="flex items-center gap-2">
+          {onRegenerate && (
+            <button
+              onClick={onRegenerate}
+              disabled={isGenerating}
+              className="px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Generate new photorealistic AI variation of this saree look"
+            >
+              <RefreshCw className={`w-3 h-3 text-amber-400 ${isGenerating ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Regenerate</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 border border-neutral-800 text-[11px] text-neutral-400">
+            <Wand2 className="w-3 h-3 text-amber-400" />
+            <span className="font-mono text-amber-300/90 hidden md:inline">ChatGPT Edit Mode</span>
+          </div>
+        </div>
       </div>
 
       {/* 2. MAIN STAGE VIEWPORT */}
       <div className="relative flex-1 w-full max-w-2xl my-2 sm:my-3 rounded-2xl sm:rounded-3xl border border-amber-500/30 bg-neutral-950 shadow-2xl overflow-hidden flex items-center justify-center">
         {/* Loading Overlay */}
         {isGenerating && (
-          <div className="absolute inset-0 z-30 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
+          <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
             <div className="relative mb-4">
               <div className="w-14 h-14 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
               <Sparkles className="w-6 h-6 text-amber-400 absolute inset-0 m-auto animate-pulse" />
             </div>
-            <h3 className="text-base sm:text-lg font-serif text-white mb-1">Draping Saree on Your Frame...</h3>
-            <p className="text-xs text-amber-300 font-mono">Preserving Face, Pose & Background</p>
+            <h3 className="text-base sm:text-lg font-serif text-white mb-1">
+              AI Editing Image with {currentLook.saree.name}...
+            </h3>
+            <p className="text-xs text-amber-300 font-mono">Draping Saree & Preserving Customer Face</p>
             <p className="text-[11px] text-neutral-400 mt-1 max-w-xs">
-              Matching {currentLook.saree.name} pleats with {currentLook.blouse.sleeveStyle} blouse and {currentLook.jewellery.name}.
+              Matching {currentLook.saree.fabric} pleats, gold zari borders, and {currentLook.blouse.sleeveStyle} blouse.
             </p>
           </div>
         )}
 
-        {/* VIEW MODE 1: Single Front View */}
+        {/* VIEW MODE 1: Single Front View (Photorealistic AI Generated Image) */}
         {viewMode === 'front' && (
           <div className="relative w-full h-full flex items-center justify-center">
             <img
               src={currentLook.frontUrl}
-              alt="Front Saree Drape"
-              className="w-full h-full object-contain select-none"
+              alt={currentLook.saree.name}
+              className="w-full h-full object-contain select-none transition-all duration-300"
             />
             {/* Front Label watermark */}
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-neutral-800 text-[10px] text-neutral-300 font-mono uppercase tracking-wider">
-              Front View
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-neutral-800 text-[10px] text-amber-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>AI Photo · Front Drape</span>
             </div>
           </div>
         )}
 
-        {/* VIEW MODE 2: Single Back View (Pallu & Back cut) */}
+        {/* VIEW MODE 2: Single Back View (Pallu Fall) */}
         {viewMode === 'back' && (
           <div className="relative w-full h-full flex items-center justify-center">
             <img
               src={currentLook.backUrl}
               alt="Back Saree Drape"
-              className="w-full h-full object-contain select-none"
+              className="w-full h-full object-contain select-none transition-all duration-300"
             />
             {/* Back Label watermark */}
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-neutral-800 text-[10px] text-amber-400 font-mono uppercase tracking-wider">
-              Back View · Pallu Fall
+            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-neutral-800 text-[10px] text-amber-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>Pallu Fall View</span>
             </div>
           </div>
         )}
@@ -222,7 +246,7 @@ export const TryOnStage: FC<TryOnStageProps> = ({
                 className="w-full h-full object-contain select-none"
               />
               <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-[9px] font-mono text-amber-300">
-                Back View
+                Back Pallu
               </span>
             </div>
           </div>
@@ -268,10 +292,10 @@ export const TryOnStage: FC<TryOnStageProps> = ({
 
             {/* Labels */}
             <span className="absolute bottom-3 left-3 px-2 py-1 rounded bg-black/70 text-[10px] text-white font-medium">
-              Original Photo
+              Uploaded Photo
             </span>
             <span className="absolute bottom-3 right-3 px-2 py-1 rounded bg-amber-500/80 text-[10px] text-neutral-950 font-bold">
-              Virtual Drape
+              AI Saree Edit
             </span>
           </div>
         )}

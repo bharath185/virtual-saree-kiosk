@@ -83,6 +83,7 @@ export function App() {
     scene?: OccasionScene;
     photo?: string;
     customPhoto?: boolean;
+    forceRefresh?: boolean;
   }) => {
     const targetSaree = overrides?.saree || selectedSaree;
     const targetStyle = overrides?.style || selectedStyle;
@@ -91,6 +92,7 @@ export function App() {
     const targetScene = overrides?.scene || selectedScene;
     const targetPhoto = overrides?.photo !== undefined ? overrides.photo : userPhoto;
     const targetIsCustom = overrides?.customPhoto !== undefined ? overrides.customPhoto : isCustomPhoto;
+    const targetForceRefresh = overrides?.forceRefresh || false;
 
     setIsAiGenerating(true);
     try {
@@ -101,7 +103,8 @@ export function App() {
         blouse: targetBlouse,
         jewellery: targetJewellery,
         scene: targetScene,
-        isCustomPhoto: targetIsCustom
+        isCustomPhoto: targetIsCustom,
+        forceRefresh: targetForceRefresh
       });
       setCurrentLook(result);
     } catch (e) {
@@ -247,6 +250,7 @@ export function App() {
             onSaveToWishlist={handleToggleWishlist}
             isSavedInWishlist={isSavedInWishlist}
             onRequestInStore={handleRequestInStore}
+            onRegenerate={() => updateLook({ forceRefresh: true })}
             scales={scales}
             onScalesChange={setScales}
             geminiAdvice={geminiAdvice}

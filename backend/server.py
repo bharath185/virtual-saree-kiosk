@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
 from ultralytics import YOLO
+from gradio_client import Client as GradioClient, handle_file
+import tempfile
 
 # Initialize FastAPI application
 app = FastAPI(title="Local Virtual Saree Try-On AI Engine", version="1.0.0")
@@ -304,6 +306,93 @@ def try_on(req: TryOnRequest):
             result_base64=None,
             processing_time_ms=(time.time() - t0) * 1000.0,
             message=str(e)
+        )
+
+class IDMTryOnRequest(BaseModel):
+    user_image_base64: str
+    preset_id: str = "kanjeevaram-red"
+    saree_description: Optional[str] = "Indian traditional silk saree with rich gold zari border"
+
+idm_client = None
+
+def get_idm_client():
+    global idm_client
+    if idm_client is None:
+        try:
+            print("🔄 Connecting to open-source IDM-VTON model...")
+            idm_client = GradioClient("yisol/IDM-VTON")
+            print("✅ IDM-VTON Client connected successfully!")
+        except Exception as e:
+            print("⚠️ Could not initialize IDM-VTON client:", e)
+    return idm_client
+
+@app.post("/api/tryon/idm-vton")
+def tryon_idm_vton(req: IDMTryOnRequest):
+    t0 = time.time()
+    try:
+        # Decode user image
+        person_bgr = decode_image(req.user_image_base64)
+        
+        # Save temp user image
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as user_tmp:
+            user_path = user_tmp.name
+            cv2.imwrite(user_path, person_bgr)
+
+        # Get saree image path
+        saree_path = SAREE_ASSETS.get(req.preset_id)
+        if not saree_path or not os.path.exists(saree_path):
+            saree_path = os.path.join(SAREE_DIR, "saree_garment_clean.png")
+
+        client = get_idm_client()
+        if client:
+            print(f"🚀 Running IDM-VTON for preset {req.preset_id}...")
+            result = client.predict(
+                dict={
+                    "background": handle_file(user_path),
+                    "layers": [],
+                    "composite": handle_file(user_path)
+                },
+                garm_img=handle_file(saree_path),
+                garment_des=req.saree_description or "Indian traditional silk saree with rich gold zari border",
+                is_checked=True,
+                is_checked_crop=False,
+                denoise_steps=20,
+                seed=42,
+                api_name="/tryon"
+            )
+
+            out_img_path = result[0]
+            if os.path.exists(out_img_path):
+                out_bgr = cv2.imread(out_img_path)
+                result_b64 = encode_image_base64(out_bgr)
+                elapsed_ms = (time.time() - t0) * 1000.0
+                return TryOnResponse(
+                    success=True,
+                    result_base64=result_b64,
+                    processing_time_ms=elapsed_ms,
+                    message="Successfully draped via open-source IDM-VTON."
+                )
+
+        raise RuntimeError("IDM-VTON inference failed, switching to local fallback")
+
+    except Exception as e:
+        print("Fallback to local OpenCV try-on due to:", e)
+        # Fallback to local OpenCV pipeline
+        saree_rgba = get_saree_rgba(req.preset_id)
+        keypoints, person_mask, skin_mask = extract_body_and_skin(person_bgr)
+        result_bgr = perform_photorealistic_vton(
+            person_bgr=person_bgr,
+            saree_rgba=saree_rgba,
+            keypoints=keypoints,
+            person_mask=person_mask,
+            skin_mask=skin_mask,
+            is_mirrored=False
+        )
+        return TryOnResponse(
+            success=True,
+            result_base64=encode_image_base64(result_bgr),
+            processing_time_ms=(time.time() - t0) * 1000.0,
+            message="Rendered via local high-fidelity VTON engine."
         )
 
 if __name__ == "__main__":

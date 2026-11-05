@@ -73,6 +73,28 @@ export class TryOnSynthesisService {
 
     try {
       if (isCustomPhoto && userImage) {
+        // Step 0: Try Open-Source SOTA Virtual Try-On (IDM-VTON)
+        const idmVtonResult = await this.tryIDMVTON(userImage, saree);
+        if (idmVtonResult) {
+          frontUrl = idmVtonResult;
+          backUrl = `/sarees/looks/look_${saree.id}_back.jpg`;
+          isAiGenerated = true;
+          this.lookCache.set(cacheKey, { frontUrl, backUrl });
+          return {
+            lookId,
+            frontUrl,
+            backUrl,
+            originalUserPhoto: userImage,
+            saree,
+            drapingStyle,
+            blouse,
+            jewellery,
+            scene,
+            generatedAt: new Date().toISOString(),
+            isAiGenerated: true
+          };
+        }
+
         // Step 1: Analyze customer appearance using Gemini Vision (if not cached)
         const customerDescription = await this.getCustomerDescription(userImage);
 
@@ -142,6 +164,33 @@ export class TryOnSynthesisService {
       generatedAt: new Date().toISOString(),
       isAiGenerated
     };
+  }
+
+  /**
+   * Calls open-source IDM-VTON (State of the art Virtual Try-On) on local AI server
+   */
+  private static async tryIDMVTON(userImage: string, saree: SareeGarment): Promise<string | null> {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/tryon/idm-vton', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_image_base64: userImage,
+          preset_id: saree.id,
+          saree_description: `${saree.name}, ${saree.fabric} fabric in ${saree.primaryColor} with ${saree.zariType} border`
+        }),
+        signal: AbortSignal.timeout(45000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.result_base64) {
+          return data.result_base64;
+        }
+      }
+    } catch {
+      // Local backend not reachable or timed out
+    }
+    return null;
   }
 
   /**

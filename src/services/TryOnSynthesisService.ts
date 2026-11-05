@@ -73,32 +73,10 @@ export class TryOnSynthesisService {
 
     try {
       if (isCustomPhoto && userImage) {
-        // Step 0: Try Open-Source SOTA Virtual Try-On (IDM-VTON)
-        const idmVtonResult = await this.tryIDMVTON(userImage, saree);
-        if (idmVtonResult) {
-          frontUrl = idmVtonResult;
-          backUrl = `/sarees/looks/look_${saree.id}_back.jpg`;
-          isAiGenerated = true;
-          this.lookCache.set(cacheKey, { frontUrl, backUrl });
-          return {
-            lookId,
-            frontUrl,
-            backUrl,
-            originalUserPhoto: userImage,
-            saree,
-            drapingStyle,
-            blouse,
-            jewellery,
-            scene,
-            generatedAt: new Date().toISOString(),
-            isAiGenerated: true
-          };
-        }
-
-        // Step 1: Analyze customer appearance using Gemini Vision (if not cached)
+        // Step 1: Analyze customer appearance and body build using Gemini Vision (if not cached)
         const customerDescription = await this.getCustomerDescription(userImage);
 
-        // Step 2: Generate photorealistic ChatGPT-style AI saree image via Flux AI
+        // Step 2: Generate photorealistic full-length saree image covering entire body from shoulders to ankles
         const aiOutput = await this.generateAILook({
           userImage,
           customerDescription,
@@ -115,7 +93,7 @@ export class TryOnSynthesisService {
           isAiGenerated = true;
           this.lookCache.set(cacheKey, { frontUrl, backUrl });
         } else {
-          // Photorealistic canvas fallback blending user face & saree drape
+          // Photorealistic canvas fallback blending user face & full saree drape
           const blended = await this.renderBlendedTryOn(userImage, saree, blouse);
           frontUrl = blended.frontUrl;
           backUrl = blended.backUrl;
@@ -167,33 +145,6 @@ export class TryOnSynthesisService {
   }
 
   /**
-   * Calls open-source IDM-VTON (State of the art Virtual Try-On) on local AI server
-   */
-  private static async tryIDMVTON(userImage: string, saree: SareeGarment): Promise<string | null> {
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/tryon/idm-vton', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_image_base64: userImage,
-          preset_id: saree.id,
-          saree_description: `${saree.name}, ${saree.fabric} fabric in ${saree.primaryColor} with ${saree.zariType} border`
-        }),
-        signal: AbortSignal.timeout(45000)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.result_base64) {
-          return data.result_base64;
-        }
-      }
-    } catch {
-      // Local backend not reachable or timed out
-    }
-    return null;
-  }
-
-  /**
    * Analyzes customer face and posture using Gemini 2.5 Flash
    */
   private static async getCustomerDescription(userImage: string): Promise<string> {
@@ -223,7 +174,7 @@ export class TryOnSynthesisService {
               {
                 parts: [
                   {
-                    text: 'Describe in 1 concise phrase (under 25 words) the customer in this image: approximate age, gender, skin tone, facial structure, smile/expression, hair style/color, and posture for fashion photo generation. Example: "A cheerful Indian woman in her late 20s with warm wheatish skin, dark wavy hair, gentle smile, standing facing camera".'
+                    text: 'Describe in 1 concise phrase (under 25 words) the customer in this image: approximate age, gender, skin tone, facial features, hair, and exact body silhouette (e.g. plus-size full-figured, curvy, athletic, slender) for a full-length fashion saree portrait. Example: "A cheerful plus-size woman in her 30s with fair skin, dark brown hair, standing facing camera".'
                   },
                   { inlineData: { mimeType, data: cleanBase64 } }
                 ]
@@ -313,8 +264,8 @@ export class TryOnSynthesisService {
     const seed = Math.floor(Math.random() * 1000000);
     const blouseColor = blouse.isContrast && blouse.color !== 'inherit' ? blouse.colorName : `${saree.primaryColor} matching`;
 
-    // 1. Front View Prompt
-    const frontPrompt = `Photorealistic 8k studio portrait of ${customerDescription}, wearing a magnificent ${saree.name}, luxurious ${saree.fabric} fabric in ${saree.primaryColor} with authentic ${saree.zariType} gold border, perfectly draped knife pleats wrapping waist to ankles, rich pallu draped elegantly over left shoulder, wearing ${blouseColor} blouse and ${jewellery.name} temple jewellery, cinematic rim lighting, highly detailed fabric texture, ultra sharp focus, Vogue India fashion photoshoot.`;
+    // 1. Front View Prompt - Complete floor-length authentic saree drape
+    const frontPrompt = `Photorealistic full-length 8k fashion studio portrait of ${customerDescription}, completely dressed in a traditional full-length Indian ${saree.name}, luxurious ${saree.fabric} in ${saree.primaryColor} with ornate ${saree.zariType} gold zari borders, floor-length knife-pleated skirt cascading from waist down to feet completely covering the lower body and legs in silk folds, royal pallu draped diagonally across the chest and over the left shoulder, matching tailored ${blouseColor} blouse with sleeves, traditional ${jewellery.name} jewellery, elegant posture, seamless authentic Indian attire, full-body portrait, cinematic studio lighting.`;
 
     // Try direct Gemini Image Generation with user's key first
     const geminiDirectFront = await this.tryGeminiDirectImageGeneration(frontPrompt, userImage);
@@ -376,9 +327,9 @@ export class TryOnSynthesisService {
           // 2. Extract and feather customer face from uploaded photo
           const uw = userImg.naturalWidth || userImg.width;
           const uh = userImg.naturalHeight || userImg.height;
-          const faceRadius = Math.min(uw, uh) * 0.17;
+          const faceRadius = Math.min(uw, uh) * 0.14;
           const faceX = uw * 0.5;
-          const faceY = uh * 0.22;
+          const faceY = uh * 0.15;
 
           const faceCanvas = document.createElement('canvas');
           faceCanvas.width = 300;
@@ -416,10 +367,10 @@ export class TryOnSynthesisService {
           // Overlay feathered customer face onto head area of AI saree model
           ctx.save();
           ctx.globalAlpha = 0.94;
-          const headW = w * 0.20;
-          const headH = headW * 1.22;
+          const headW = w * 0.16;
+          const headH = headW * 1.25;
           const headX = (w - headW) * 0.5;
-          const headY = h * 0.13;
+          const headY = h * 0.09;
 
           ctx.drawImage(faceCanvas, headX, headY, headW, headH);
           ctx.restore();
@@ -476,9 +427,9 @@ export class TryOnSynthesisService {
 
           const uw = userImg.naturalWidth || userImg.width;
           const uh = userImg.naturalHeight || userImg.height;
-          const faceRadius = Math.min(uw, uh) * 0.18;
+          const faceRadius = Math.min(uw, uh) * 0.14;
           const faceX = uw * 0.5;
-          const faceY = uh * 0.22;
+          const faceY = uh * 0.15;
 
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = 300;

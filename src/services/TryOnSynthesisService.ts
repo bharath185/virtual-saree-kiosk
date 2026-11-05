@@ -72,29 +72,7 @@ export class TryOnSynthesisService {
 
     try {
       if (isCustomPhoto && userImage) {
-        // Step 1: Try OOTDiffusion Full-Body (Dress Mode) via local backend
-        const ootdResult = await this.tryOOTDiffusion(userImage, saree);
-        if (ootdResult) {
-          frontUrl = ootdResult;
-          backUrl = `/sarees/looks/look_${saree.id}_back.jpg`;
-          isAiGenerated = true;
-          this.lookCache.set(cacheKey, { frontUrl, backUrl });
-          return {
-            lookId,
-            frontUrl,
-            backUrl,
-            originalUserPhoto: userImage,
-            saree,
-            drapingStyle,
-            blouse,
-            jewellery,
-            scene,
-            generatedAt: new Date().toISOString(),
-            isAiGenerated: true
-          };
-        }
-
-        // Step 2: Try direct Google Gemini Image Generation with user's key
+        // Step 1: Try direct Google Gemini Image Generation if user enabled billing
         const geminiDirect = await this.tryGeminiDirectImageGeneration(
           `Photorealistic full-length studio portrait of an Indian woman wearing ${saree.name}, ${saree.fabric} in ${saree.primaryColor} with ${saree.zariType} gold border, floor-length pleated skirt wrapping waist to ankles, rich pallu over shoulder, matching ${blouse.colorName} blouse`,
           userImage
@@ -106,7 +84,7 @@ export class TryOnSynthesisService {
           isAiGenerated = true;
           this.lookCache.set(cacheKey, { frontUrl, backUrl });
         } else {
-          // Step 3: Instant full-body saree compositor (zero rate-limits, zero banners)
+          // Step 2: Instant authentic full-length saree compositor (covers whole body, zero distortion, zero rate-limits)
           const blended = await this.renderBlendedTryOn(userImage, saree, blouse);
           frontUrl = blended.frontUrl;
           backUrl = blended.backUrl;
@@ -142,33 +120,6 @@ export class TryOnSynthesisService {
       generatedAt: new Date().toISOString(),
       isAiGenerated
     };
-  }
-
-  /**
-   * Calls OOTDiffusion Full-Body (Dress Mode) on local AI server
-   */
-  private static async tryOOTDiffusion(userImage: string, saree: SareeGarment): Promise<string | null> {
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/tryon/ootdiffusion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_image_base64: userImage,
-          preset_id: saree.id,
-          saree_description: `${saree.name}, ${saree.fabric} in ${saree.primaryColor} with ${saree.zariType} border`
-        }),
-        signal: AbortSignal.timeout(30000)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.result_base64) {
-          return data.result_base64;
-        }
-      }
-    } catch {
-      // Local server not available or timed out
-    }
-    return null;
   }
 
   /**

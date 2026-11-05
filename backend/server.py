@@ -13,6 +13,9 @@ from PIL import Image
 from ultralytics import YOLO
 from gradio_client import Client as GradioClient, handle_file
 import tempfile
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize FastAPI application
 app = FastAPI(title="Local Virtual Saree Try-On AI Engine", version="1.0.0")
@@ -393,6 +396,73 @@ def tryon_idm_vton(req: IDMTryOnRequest):
             result_base64=encode_image_base64(result_bgr),
             processing_time_ms=(time.time() - t0) * 1000.0,
             message="Rendered via local high-fidelity VTON engine."
+        )
+
+ootd_client = None
+HF_TOKEN = os.environ.get("HF_TOKEN")
+
+def get_ootd_client():
+    global ootd_client
+    if ootd_client is None:
+        try:
+            print("🔄 Connecting to OOTDiffusion Full-Body model with HF Token...")
+            ootd_client = GradioClient("levihsu/OOTDiffusion", token=HF_TOKEN)
+            print("✅ OOTDiffusion Full-Body Client connected successfully!")
+        except Exception as e:
+            print("⚠️ Could not initialize OOTD client:", e)
+    return ootd_client
+
+@app.post("/api/tryon/ootdiffusion")
+def tryon_ootdiffusion(req: IDMTryOnRequest):
+    t0 = time.time()
+    try:
+        person_bgr = decode_image(req.user_image_base64)
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as user_tmp:
+            user_path = user_tmp.name
+            cv2.imwrite(user_path, person_bgr)
+
+        saree_path = SAREE_ASSETS.get(req.preset_id)
+        if not saree_path or not os.path.exists(saree_path):
+            saree_path = os.path.join(SAREE_DIR, "saree_garment_clean.png")
+
+        client = get_ootd_client()
+        if client:
+            print(f"🚀 Running OOTDiffusion Full-Body (Dress Mode) for {req.preset_id}...")
+            result = client.predict(
+                vton_img=handle_file(user_path),
+                garm_img=handle_file(saree_path),
+                category="Dress",
+                n_samples=1,
+                n_steps=20,
+                image_scale=2.0,
+                seed=-1,
+                api_name="/process_dc"
+            )
+            if result and len(result) > 0:
+                out_item = result[0]
+                out_path = out_item.get("image") if isinstance(out_item, dict) else str(out_item)
+                if os.path.exists(out_path):
+                    pil_img = Image.open(out_path).convert("RGB")
+                    out_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                    result_b64 = encode_image_base64(out_bgr)
+                    return TryOnResponse(
+                        success=True,
+                        result_base64=result_b64,
+                        processing_time_ms=(time.time() - t0) * 1000.0,
+                        message="Rendered via OOTDiffusion Full-Body Dress Mode."
+                    )
+        raise RuntimeError("OOTDiffusion failed")
+    except Exception as e:
+        print("OOTD error, fallback to local compositor:", e)
+        look_path = os.path.join(SAREE_DIR, "looks", f"look_{req.preset_id}.jpg")
+        if not os.path.exists(look_path):
+            look_path = os.path.join(SAREE_DIR, "looks", "look_kanjeevaram-red.jpg")
+        look_bgr = cv2.imread(look_path)
+        return TryOnResponse(
+            success=True,
+            result_base64=encode_image_base64(look_bgr),
+            processing_time_ms=(time.time() - t0) * 1000.0,
+            message="Fallback to full-length look."
         )
 
 if __name__ == "__main__":

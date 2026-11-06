@@ -465,6 +465,72 @@ def tryon_ootdiffusion(req: IDMTryOnRequest):
             message="Fallback to full-length look."
         )
 
+fashn_client = None
+
+def get_fashn_client():
+    global fashn_client
+    if fashn_client is None:
+        try:
+            print("🔄 Connecting to FASHN VTON 1.5 model with HF Token...")
+            token = os.environ.get("HF_TOKEN")
+            fashn_client = GradioClient("fashn-ai/fashn-vton-1.5", token=token)
+            print("✅ FASHN VTON 1.5 Client connected successfully!")
+        except Exception as e:
+            print("⚠️ Could not initialize FASHN client:", e)
+    return fashn_client
+
+@app.post("/api/tryon/fashn")
+def tryon_fashn(req: IDMTryOnRequest):
+    t0 = time.time()
+    try:
+        person_bgr = decode_image(req.user_image_base64)
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as user_tmp:
+            user_path = user_tmp.name
+            cv2.imwrite(user_path, person_bgr)
+
+        saree_path = SAREE_ASSETS.get(req.preset_id)
+        if not saree_path or not os.path.exists(saree_path):
+            saree_path = os.path.join(SAREE_DIR, "saree_garment_clean.png")
+
+        client = get_fashn_client()
+        if client:
+            print(f"🚀 Running FASHN VTON 1.5 (one-pieces mode) for {req.preset_id}...")
+            result = client.predict(
+                person_image=handle_file(user_path),
+                garment_image=handle_file(saree_path),
+                category="one-pieces",
+                garment_photo_type="flat-lay",
+                num_timesteps=30,
+                guidance_scale=1.5,
+                seed=42,
+                segmentation_free=True,
+                api_name="/try_on"
+            )
+            out_path = result if isinstance(result, str) else result.get("path") if isinstance(result, dict) else None
+            if out_path and os.path.exists(out_path):
+                pil_img = Image.open(out_path).convert("RGB")
+                out_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                result_b64 = encode_image_base64(out_bgr)
+                return TryOnResponse(
+                    success=True,
+                    result_base64=result_b64,
+                    processing_time_ms=(time.time() - t0) * 1000.0,
+                    message="Rendered via FASHN VTON 1.5 (one-pieces mode)."
+                )
+        raise RuntimeError("FASHN VTON inference failed")
+    except Exception as e:
+        print("FASHN error, fallback to local compositor:", e)
+        look_path = os.path.join(SAREE_DIR, "looks", f"look_{req.preset_id}.jpg")
+        if not os.path.exists(look_path):
+            look_path = os.path.join(SAREE_DIR, "looks", "look_kanjeevaram-red.jpg")
+        look_bgr = cv2.imread(look_path)
+        return TryOnResponse(
+            success=True,
+            result_base64=encode_image_base64(look_bgr),
+            processing_time_ms=(time.time() - t0) * 1000.0,
+            message="Fallback to full-length look."
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

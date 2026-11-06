@@ -25,6 +25,7 @@ interface TryOnStageProps {
   isSavedInWishlist: boolean;
   onRequestInStore: () => void;
   onRegenerate?: () => void;
+  onRunFashn?: () => void;
   scales?: {
     shoulderScale: number;
     waistHipScale: number;
@@ -43,6 +44,7 @@ export const TryOnStage: FC<TryOnStageProps> = ({
   isSavedInWishlist,
   onRequestInStore,
   onRegenerate,
+  onRunFashn,
   scales = { shoulderScale: 1.0, waistHipScale: 1.0, heightScale: 1.0 },
   onScalesChange,
   geminiAdvice
@@ -154,8 +156,20 @@ export const TryOnStage: FC<TryOnStageProps> = ({
           </button>
         </div>
 
-        {/* ChatGPT Edit / Regenerate Action */}
+        {/* ChatGPT Edit / Regenerate & FASHN Actions */}
         <div className="flex items-center gap-2">
+          {onRunFashn && (
+            <button
+              onClick={onRunFashn}
+              disabled={isGenerating}
+              className="px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-500/20 to-indigo-500/20 hover:from-purple-500/30 hover:to-indigo-500/30 border border-purple-500/40 text-purple-200 text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Run FASHN VTON 1.5 MMDiT model on your photo"
+            >
+              <Sparkles className="w-3 h-3 text-purple-400" />
+              <span>FASHN AI</span>
+            </button>
+          )}
+
           {onRegenerate && (
             <button
               onClick={onRegenerate}
@@ -164,13 +178,13 @@ export const TryOnStage: FC<TryOnStageProps> = ({
               title="Generate new photorealistic AI variation of this saree look"
             >
               <RefreshCw className={`w-3 h-3 text-amber-400 ${isGenerating ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Regenerate</span>
+              <span className="hidden sm:inline">Studio</span>
             </button>
           )}
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 border border-neutral-800 text-[11px] text-neutral-400">
             <Wand2 className="w-3 h-3 text-amber-400" />
-            <span className="font-mono text-amber-300/90 hidden md:inline">ChatGPT Edit Mode</span>
+            <span className="font-mono text-amber-300/90 hidden md:inline">ChatGPT Mode</span>
           </div>
         </div>
       </div>

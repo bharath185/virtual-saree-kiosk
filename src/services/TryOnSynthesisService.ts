@@ -123,6 +123,33 @@ export class TryOnSynthesisService {
   }
 
   /**
+   * Calls official open-source FASHN VTON 1.5 on local AI server
+   */
+  public static async tryFASHNVTON(userImage: string, saree: SareeGarment): Promise<string | null> {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/tryon/fashn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_image_base64: userImage,
+          preset_id: saree.id,
+          saree_description: `${saree.name}, ${saree.fabric} in ${saree.primaryColor} with ${saree.zariType} border`
+        }),
+        signal: AbortSignal.timeout(40000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.result_base64) {
+          return data.result_base64;
+        }
+      }
+    } catch {
+      // Local server not available or timed out
+    }
+    return null;
+  }
+
+  /**
    * Attempts to generate image directly via Gemini's image generation model (gemini-2.5-flash-image)
    * using the user's provided Gemini API key.
    */

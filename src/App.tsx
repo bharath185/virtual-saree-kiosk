@@ -198,6 +198,28 @@ export function App() {
     });
   };
 
+  const handleRunFashn = async () => {
+    if (!userPhoto) {
+      setIsUploadOpen(true);
+      return;
+    }
+    setIsAiGenerating(true);
+    try {
+      const fashnResult = await TryOnSynthesisService.tryFASHNVTON(userPhoto, selectedSaree);
+      if (fashnResult) {
+        setCurrentLook(prev => ({
+          ...prev,
+          frontUrl: fashnResult,
+          isAiGenerated: true
+        }));
+      }
+    } catch (e) {
+      console.warn('FASHN run error:', e);
+    } finally {
+      setIsAiGenerating(false);
+    }
+  };
+
   const handleToggleWishlist = (look: TryOnResult) => {
     setWishlist((prev) => {
       const exists = prev.some((l) => l.lookId === look.lookId || (l.saree.id === look.saree.id && l.drapingStyle.id === look.drapingStyle.id));
@@ -251,6 +273,7 @@ export function App() {
             isSavedInWishlist={isSavedInWishlist}
             onRequestInStore={handleRequestInStore}
             onRegenerate={() => updateLook({ forceRefresh: true })}
+            onRunFashn={handleRunFashn}
             scales={scales}
             onScalesChange={setScales}
             geminiAdvice={geminiAdvice}

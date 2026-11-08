@@ -41,6 +41,7 @@ print("✅ Local AI Models Loaded successfully!")
 
 # Saree catalog mapping
 SAREE_ASSETS = {
+    "banarasi-orange-gold": os.path.join(SAREE_DIR, "saree_garment_cutout.png"),
     "navy-zardozi": os.path.join(SAREE_DIR, "saree_teal.png"),
     "kanjeevaram-red": os.path.join(SAREE_DIR, "saree_red.png"),
     "royal-banarasi": os.path.join(SAREE_DIR, "saree_royal_blue.png"),
